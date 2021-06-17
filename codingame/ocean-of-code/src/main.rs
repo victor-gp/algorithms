@@ -8,12 +8,10 @@ macro_rules! parse_input {
 fn main() {
     let mut global = read_starting_info();
 
-    let mut rng = rand::thread_rng();
-
     // 1st turn: choose a starting position
     let valid_ps = global.map.water_positions();
     let first_pos = valid_ps[
-        rng.gen_range(0..valid_ps.len())
+        rand::thread_rng().gen_range(0..valid_ps.len())
     ];
     println!("{}", display(first_pos));
 
