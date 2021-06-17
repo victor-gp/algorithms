@@ -6,7 +6,7 @@ macro_rules! parse_input {
 }
 
 fn main() {
-    let global = read_starting_info();
+    let mut global = read_starting_info();
 
     let mut rng = rand::thread_rng();
 
@@ -17,8 +17,13 @@ fn main() {
     ];
     println!("{}", display(first_pos));
 
+    let mut me = Me::new();
+    let mut opp = Opponent::new();
+
     loop {
-        read_turn_info();
+        global.turn += 1;
+        read_turn_info(&global, &mut me, &mut opp);
+
         println!("MOVE N TORPEDO");
     }
 }
@@ -73,8 +78,7 @@ fn read_starting_info() -> Global {
     }
 }
 
-// fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
-fn read_turn_info() {
+fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
     let mut input_line = String::new();
     io::stdin().read_line(&mut input_line).unwrap();
     let inputs = input_line.split(" ").collect::<Vec<_>>();
@@ -92,17 +96,19 @@ fn read_turn_info() {
     let mut input_line = String::new();
     io::stdin().read_line(&mut input_line).unwrap();
     let opponent_orders = input_line.trim_matches('\n').to_string();
-/*
-    // TODO: analyze everything (if turn > 2) then assign
-    me.pos = Position{x, y};
+
+    if global.turn > 2 {
+        me.visited.push(me.pos)
+
+        // TODO: analyze everything
+    }
+
+    me.pos = (y as usize, x as usize);
     me.lives = my_life;
     opp.lives = opp_life;
 
     me.torpedo_cooldown = torpedo_cooldown;
-
-    // opp.analyze_sonar_result(sonar_result);
-    // opp.analyze_orders(opponent_orders as actions);
-*/}
+}
 
 impl Map {
     fn read(width: i32, height: i32) -> Map {
@@ -179,6 +185,26 @@ impl Cell {
         match self {
             Cell::Water => '.',
             Cell::Land  => 'x'
+        }
+    }
+}
+
+impl Me {
+    fn new() -> Me {
+        Me {
+            lives: 0,
+            pos: (0, 0),
+            visited: Vec::new(),
+            torpedo_cooldown: 0,
+        }
+    }
+}
+
+impl Opponent {
+    fn new() -> Opponent {
+        Opponent {
+            lives: 0,
+            likely_pos: Vec::new(),
         }
     }
 }
