@@ -31,13 +31,6 @@ struct Global {
     me_first: bool,
 }
 
-struct Map {
-    width: i32,
-    height: i32,
-    grid: Vec<Vec<Cell>>,
-    water: Vec<Position>,
-}
-
 struct Me {
     lives: i32,
     pos: Position,
@@ -55,6 +48,21 @@ struct Opponent {
     //move_history: Vec<Move>,
     // cooldowns
 }
+
+struct Map {
+    width: i32,
+    height: i32,
+    grid: Vec<Vec<Cell>>,
+    water: Vec<Position>,
+}
+
+#[derive(Copy, Clone)]
+struct Position {
+    x: usize,
+    y: usize
+}
+
+enum Cell { Water, Land }
 
 fn read_starting_info() -> Global {
     let mut input_line = String::new();
@@ -138,6 +146,35 @@ impl fmt::Debug for Map {
     }
 }
 
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.x, self.y)
+    }
+}
+
+impl fmt::Debug for Position {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", (self.x, self.y))
+    }
+}
+
+impl Cell {
+    fn from_char(c: char) -> Cell {
+        match c {
+            '.' => Cell::Water,
+            'x' => Cell::Land,
+            _ => panic!("invalid cell")
+        }
+    }
+
+    fn to_char(&self) -> char {
+        match self {
+            Cell::Water => '.',
+            Cell::Land  => 'x'
+        }
+    }
+}
+
 use std::slice::Iter;
 
 impl Map {
@@ -162,43 +199,6 @@ impl Map {
 
     fn water_it(&self) -> Iter<Position> {
         self.water.iter()
-    }
-}
-
-#[derive(Copy, Clone)]
-struct Position {
-    x: usize,
-    y: usize
-}
-
-impl fmt::Display for Position {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}", self.x, self.y)
-    }
-}
-
-impl fmt::Debug for Position {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", (self.x, self.y))
-    }
-}
-
-enum Cell { Water, Land }
-
-impl Cell {
-    fn from_char(c: char) -> Cell {
-        match c {
-            '.' => Cell::Water,
-            'x' => Cell::Land,
-            _ => panic!("invalid cell")
-        }
-    }
-
-    fn to_char(&self) -> char {
-        match self {
-            Cell::Water => '.',
-            Cell::Land  => 'x'
-        }
     }
 }
 
