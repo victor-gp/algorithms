@@ -3,7 +3,6 @@ macro_rules! parse_input {
     ($x:expr, $t:ident) => ($x.trim().parse::<$t>().unwrap())
 }
 
-use rand::Rng;
 use rand::seq::IteratorRandom;
 
 fn main() {
@@ -43,9 +42,9 @@ struct Me {
 
 struct Opponent {
     lives: i32,
-    likely_pos: Vec<Position>,
-    //visited: Vec<Position>,
-    //move_history: Vec<Move>,
+    // likely_pos: Iter<'static, Position>,
+    // visited: Vec<Position>,
+    // move_history: Vec<Move>,
     // cooldowns
 }
 
@@ -217,7 +216,6 @@ impl Opponent {
     fn new() -> Opponent {
         Opponent {
             lives: 0,
-            likely_pos: Vec::new(),
         }
     }
 }
