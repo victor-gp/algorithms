@@ -19,7 +19,9 @@ fn main() {
         global.turn += 1;
         read_turn_info(&global, &mut me, &mut opp);
 
-        println!("MOVE N TORPEDO");
+        let action = next_action(&global, &me, &opp);
+
+        println!("{}", action);
     }
 }
 
@@ -172,6 +174,10 @@ impl Cell {
             Cell::Land  => 'x'
         }
     }
+
+    fn is_water(&self) -> bool {
+        matches!(self, Cell::Water)
+    }
 }
 
 use std::slice::Iter;
@@ -217,5 +223,82 @@ impl Opponent {
         Opponent {
             lives: 0,
         }
+    }
+}
+
+#[derive(Copy, Clone)]
+struct Move { dir: char, load_torpedo: bool }
+
+impl Move {
+    fn possible_moves(pos: Coord, map: &Map, visited: &Vec<Coord>) -> Vec<Move> {
+        let directions = ['N', 'E', 'S', 'W'];
+        let adjacents = pos.adjacents_clockwise();
+        let mut valid_moves = Vec::new();
+
+        eprintln!("{:?}", adjacents);
+
+        for i in 0..=3 {
+            let pos_i = adjacents[i];
+            if map.is_water(pos_i) && !visited.contains(&pos_i) {
+                valid_moves.push(
+                    Move{ dir: directions[i], load_torpedo: true }
+                );
+            }
+        }
+
+        eprintln!("{:?}", valid_moves);
+
+        valid_moves
+    }
+}
+
+impl fmt::Display for Move {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "MOVE {} TORPEDO", self.dir)
+    }
+}
+
+impl fmt::Debug for Move {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+impl Coord {
+    fn adjacents_clockwise(&self) -> [Coord; 4] {
+        [
+            Coord { y: self.y - 1, ..*self },
+            Coord { x: self.x + 1, ..*self },
+            Coord { y: self.y + 1, ..*self },
+            Coord { x: self.x - 1, ..*self }
+        ]
+    }
+}
+
+impl PartialEq for Coord {
+    fn eq(&self, other: &Self) -> bool {
+        self.x == other.x && self.y == other.y
+    }
+}
+
+impl Map {
+    fn is_water(&self, coord: Coord) -> bool {
+        self.is_within_bounds(coord)
+            && self.grid[coord.y][coord.x].is_water()
+    }
+
+    fn is_within_bounds(&self, coord: Coord) -> bool {
+        0 <= coord.x && coord.x < self.width as usize
+            && 0 <= coord.y && coord.y < self.height as usize
+    }
+}
+
+fn next_action(global: &Global, me: &Me, opp: &Opponent) -> Move {
+    let possible_moves = Move::possible_moves(me.pos, &global.map, &me.visited);
+
+    if possible_moves.is_empty() {
+        panic!("no possible moves!")
+    } else {
+        possible_moves[0]
     }
 }
