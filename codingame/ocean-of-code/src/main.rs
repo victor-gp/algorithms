@@ -65,7 +65,21 @@ fn read_starting_info() -> Global {
     let height = parse_input!(inputs[1], i32);
     let my_id = parse_input!(inputs[2], i32);
 
-    let map = Map::read(width, height);
+    let mut grid = Vec::new();
+    for i in 0..height as usize {
+        let mut input_line = String::new();
+        io::stdin().read_line(&mut input_line).unwrap();
+        let line = input_line.trim_matches('\n').to_string();
+        // eprintln!("{}",line);
+
+        grid.push(
+            line.chars()
+            .map(|c| Cell::from_char(c))
+            .collect::<Vec<Cell>>()
+        )
+    }
+
+    let map = Map { width, height, grid };
     eprintln!("{:?}", map);
 
     Global {
@@ -106,27 +120,6 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
     opp.lives = opp_life;
 
     me.torpedo_cooldown = torpedo_cooldown;
-}
-
-impl Map {
-    fn read(width: i32, height: i32) -> Map {
-        let mut grid = Vec::new();
-
-        for i in 0..height as usize {
-            let mut input_line = String::new();
-            io::stdin().read_line(&mut input_line).unwrap();
-            let line = input_line.trim_matches('\n').to_string();
-            // eprintln!("{}",line);
-
-            grid.push(
-                line.chars()
-                .map(|c| Cell::from_char(c))
-                .collect::<Vec<Cell>>()
-            )
-        }
-
-        Map { width, height, grid }
-    }
 }
 
 use std::fmt;
