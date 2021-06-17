@@ -5,52 +5,29 @@ macro_rules! parse_input {
     ($x:expr, $t:ident) => ($x.trim().parse::<$t>().unwrap())
 }
 
-const GAME_TURNS: u16 = 300;
-
 fn main() {
-    let mut input_line = String::new();
-    io::stdin().read_line(&mut input_line).unwrap();
-    let inputs = input_line.split(" ").collect::<Vec<_>>();
-    let width = parse_input!(inputs[0], i32);
-    let height = parse_input!(inputs[1], i32);
-    let my_id = parse_input!(inputs[2], i32);
-    let map = Map::read(width, height);
-    eprintln!("{:?}", map);
+    let global = read_starting_info();
 
     let mut rng = rand::thread_rng();
 
     // 1st turn: choose a starting position
-    let mut turn = 1u16;
-    let valid_poss = map.water_positions();
-    let first_pos = valid_poss[
-        rng.gen_range(0..valid_poss.len())
+    let valid_ps = global.map.water_positions();
+    let first_pos = valid_ps[
+        rng.gen_range(0..valid_ps.len())
     ];
     println!("{}", display(first_pos));
 
-    // game loop
     loop {
-        turn += 1;
-
-        let mut input_line = String::new();
-        io::stdin().read_line(&mut input_line).unwrap();
-        let inputs = input_line.split(" ").collect::<Vec<_>>();
-        let x = parse_input!(inputs[0], i32);
-        let y = parse_input!(inputs[1], i32);
-        let my_life = parse_input!(inputs[2], i32);
-        let opp_life = parse_input!(inputs[3], i32);
-        let torpedo_cooldown = parse_input!(inputs[4], i32);
-        let sonar_cooldown = parse_input!(inputs[5], i32);
-        let silence_cooldown = parse_input!(inputs[6], i32);
-        let mine_cooldown = parse_input!(inputs[7], i32);
-        let mut input_line = String::new();
-        io::stdin().read_line(&mut input_line).unwrap();
-        let sonar_result = input_line.trim().to_string();
-        let mut input_line = String::new();
-        io::stdin().read_line(&mut input_line).unwrap();
-        let opponent_orders = input_line.trim_matches('\n').to_string();
-
+        read_turn_info();
         println!("MOVE N TORPEDO");
     }
+}
+
+struct Global {
+    map: Map,
+    turn: i32,
+    game_turns: i32,
+    me_first: bool,
 }
 
 struct Map {
@@ -58,6 +35,74 @@ struct Map {
     height: i32,
     grid: Vec<Vec<Cell>>,
 }
+
+struct Me {
+    lives: i32,
+    pos: Position,
+    visited: Vec<Position>,
+    torpedo_cooldown: i32,
+    // sonar_cooldown: i32,
+    // silence_cooldown: i32,
+    // mine_cooldown: i32,
+}
+
+struct Opponent {
+    lives: i32,
+    likely_pos: Vec<Position>,
+    //visited: Vec<Position>,
+    //move_history: Vec<Move>,
+    // cooldowns
+}
+
+fn read_starting_info() -> Global {
+    let mut input_line = String::new();
+    io::stdin().read_line(&mut input_line).unwrap();
+    let inputs = input_line.split(" ").collect::<Vec<_>>();
+    let width = parse_input!(inputs[0], i32);
+    let height = parse_input!(inputs[1], i32);
+    let my_id = parse_input!(inputs[2], i32);
+
+    let map = Map::read(width, height);
+    eprintln!("{:?}", map);
+
+    Global {
+        map,
+        turn: 1,
+        game_turns: 300,
+        me_first: my_id == 0
+    }
+}
+
+// fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
+fn read_turn_info() {
+    let mut input_line = String::new();
+    io::stdin().read_line(&mut input_line).unwrap();
+    let inputs = input_line.split(" ").collect::<Vec<_>>();
+    let x = parse_input!(inputs[0], i32);
+    let y = parse_input!(inputs[1], i32);
+    let my_life = parse_input!(inputs[2], i32);
+    let opp_life = parse_input!(inputs[3], i32);
+    let torpedo_cooldown = parse_input!(inputs[4], i32);
+    let sonar_cooldown = parse_input!(inputs[5], i32);
+    let silence_cooldown = parse_input!(inputs[6], i32);
+    let mine_cooldown = parse_input!(inputs[7], i32);
+    let mut input_line = String::new();
+    io::stdin().read_line(&mut input_line).unwrap();
+    let sonar_result = input_line.trim().to_string();
+    let mut input_line = String::new();
+    io::stdin().read_line(&mut input_line).unwrap();
+    let opponent_orders = input_line.trim_matches('\n').to_string();
+/*
+    // TODO: analyze everything (if turn > 2) then assign
+    me.pos = Position{x, y};
+    me.lives = my_life;
+    opp.lives = opp_life;
+
+    me.torpedo_cooldown = torpedo_cooldown;
+
+    // opp.analyze_sonar_result(sonar_result);
+    // opp.analyze_orders(opponent_orders as actions);
+*/}
 
 impl Map {
     fn read(width: i32, height: i32) -> Map {
