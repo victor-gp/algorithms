@@ -13,7 +13,7 @@ fn main() {
     let first_pos = valid_ps[
         rand::thread_rng().gen_range(0..valid_ps.len())
     ];
-    println!("{}", display(first_pos));
+    println!("{}", first_pos);
 
     let mut me = Me::new();
     let mut opp = Opponent::new();
@@ -80,8 +80,8 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
     let mut input_line = String::new();
     io::stdin().read_line(&mut input_line).unwrap();
     let inputs = input_line.split(" ").collect::<Vec<_>>();
-    let x = parse_input!(inputs[0], i32);
-    let y = parse_input!(inputs[1], i32);
+    let x = parse_input!(inputs[0], usize);
+    let y = parse_input!(inputs[1], usize);
     let my_life = parse_input!(inputs[2], i32);
     let opp_life = parse_input!(inputs[3], i32);
     let torpedo_cooldown = parse_input!(inputs[4], i32);
@@ -101,7 +101,7 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
         // TODO: analyze everything
     }
 
-    me.pos = (y as usize, x as usize);
+    me.pos = Position{x, y};
     me.lives = my_life;
     opp.lives = opp_life;
 
@@ -153,7 +153,7 @@ impl Map {
             row.iter().enumerate().filter_map(move |jc| {
                 let (j, cell) = jc;
                 match cell {
-                    Cell::Water => Some((j,i)), // transpose!
+                    Cell::Water => Some( Position{x: j, y: i} ),
                     Cell::Land  => None
                 }
             })
@@ -161,11 +161,22 @@ impl Map {
     }
 }
 
-type Position = (usize, usize);
+#[derive(Copy, Clone)]
+struct Position {
+    x: usize,
+    y: usize
+}
 
-fn display(p: Position) -> String {
-    let (x, y) = p;
-    format!("{} {}", x, y)
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.x, self.y)
+    }
+}
+
+impl fmt::Debug for Position {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", (self.x, self.y))
+    }
 }
 
 enum Cell { Water, Land }
@@ -191,7 +202,7 @@ impl Me {
     fn new() -> Me {
         Me {
             lives: 0,
-            pos: (0, 0),
+            pos: Position{x: 0, y: 0},
             visited: Vec::new(),
             torpedo_cooldown: 0,
         }
