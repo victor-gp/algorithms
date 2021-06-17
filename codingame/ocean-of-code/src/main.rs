@@ -1,18 +1,16 @@
 use std::io;
-use rand::Rng;
-
 macro_rules! parse_input {
     ($x:expr, $t:ident) => ($x.trim().parse::<$t>().unwrap())
 }
+
+use rand::Rng;
+use rand::seq::IteratorRandom;
 
 fn main() {
     let mut global = read_starting_info();
 
     // 1st turn: choose a starting position
-    let valid_ps = global.map.water_positions();
-    let first_pos = valid_ps[
-        rand::thread_rng().gen_range(0..valid_ps.len())
-    ];
+    let first_pos = global.map.water_it().choose(&mut rand::thread_rng()).unwrap();
     println!("{}", first_pos);
 
     let mut me = Me::new();
@@ -37,6 +35,7 @@ struct Map {
     width: i32,
     height: i32,
     grid: Vec<Vec<Cell>>,
+    water: Vec<Position>,
 }
 
 struct Me {
@@ -79,7 +78,7 @@ fn read_starting_info() -> Global {
         )
     }
 
-    let map = Map { width, height, grid };
+    let map = Map::new(width, height, grid);
     eprintln!("{:?}", map);
 
     Global {
@@ -139,9 +138,17 @@ impl fmt::Debug for Map {
     }
 }
 
+use std::slice::Iter;
+
 impl Map {
-    fn water_positions(&self) -> Vec<Position> {
-        self.grid.iter().enumerate().flat_map(|ir| {
+    fn new(width: i32, height: i32, grid: Vec<Vec<Cell>>) -> Map {
+        let water = Map::water_positions(&grid);
+
+        Map { width, height, grid, water }
+    }
+
+    fn water_positions(grid: &Vec<Vec<Cell>>) -> Vec<Position> {
+        grid.iter().enumerate().flat_map(|ir| {
             let (i, row) = ir;
             row.iter().enumerate().filter_map(move |jc| {
                 let (j, cell) = jc;
@@ -151,6 +158,10 @@ impl Map {
                 }
             })
         }).collect::<Vec<Position>>()
+    }
+
+    fn water_it(&self) -> Iter<Position> {
+        self.water.iter()
     }
 }
 
