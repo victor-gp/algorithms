@@ -1,4 +1,5 @@
 use std::io;
+use rand::Rng;
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => ($x.trim().parse::<$t>().unwrap())
@@ -14,12 +15,17 @@ fn main() {
     let height = parse_input!(inputs[1], i32);
     let my_id = parse_input!(inputs[2], i32);
     let map = Map::read(width, height);
-    // eprintln!("{}", map.to_string());
+    eprintln!("{:?}", map);
 
+    let mut rng = rand::thread_rng();
+
+    // 1st turn: choose a starting position
     let mut turn = 1u16;
-
-    // starting position, turn 1
-    println!("7 7");
+    let valid_poss = map.water_positions();
+    let first_pos = valid_poss[
+        rng.gen_range(0..valid_poss.len())
+    ];
+    println!("{}", display(first_pos));
 
     // game loop
     loop {
@@ -72,23 +78,48 @@ impl Map {
 
         Map { width, height, grid }
     }
+}
 
-    fn to_string(&self) -> String {
-        let preamble = format!("<Map>\nwidth: {} / height: {}\n", self.width, self.height);
+use std::fmt;
+
+impl fmt::Debug for Map {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let preamble = format!("Map {{\nwidth: {} / height: {}\n", self.width, self.height);
         let grid = self.grid.iter()
             .map(|row| row.iter()
                 .map(|cell| cell.to_char())
                 .collect::<String>()
             ).collect::<Vec<String>>()
             .join("\n");
+        let slice = &(preamble + &grid + "\n} Map");
 
-        preamble + &grid + "\n</Map>"
+        f.write_str(slice)
     }
 }
 
-enum Cell {
-    Water, Land
+impl Map {
+    fn water_positions(&self) -> Vec<Position> {
+        self.grid.iter().enumerate().flat_map(|ir| {
+            let (i, row) = ir;
+            row.iter().enumerate().filter_map(move |jc| {
+                let (j, cell) = jc;
+                match cell {
+                    Cell::Water => Some((j,i)), // transpose!
+                    Cell::Land  => None
+                }
+            })
+        }).collect::<Vec<Position>>()
+    }
 }
+
+type Position = (usize, usize);
+
+fn display(p: Position) -> String {
+    let (x, y) = p;
+    format!("{} {}", x, y)
+}
+
+enum Cell { Water, Land }
 
 impl Cell {
     fn from_char(c: char) -> Cell {
