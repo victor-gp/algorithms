@@ -32,8 +32,8 @@ struct Global {
 
 struct Me {
     lives: i32,
-    pos: Position,
-    visited: Vec<Position>,
+    pos: Coord,
+    visited: Vec<Coord>,
     torpedo_cooldown: i32,
     // sonar_cooldown: i32,
     // silence_cooldown: i32,
@@ -42,8 +42,8 @@ struct Me {
 
 struct Opponent {
     lives: i32,
-    // likely_pos: Iter<'static, Position>,
-    // visited: Vec<Position>,
+    // likely_pos: Iter<'static, Coord>,
+    // visited: Vec<Coord>,
     // move_history: Vec<Move>,
     // cooldowns
 }
@@ -52,11 +52,11 @@ struct Map {
     width: i32,
     height: i32,
     grid: Vec<Vec<Cell>>,
-    water: Vec<Position>,
+    water: Vec<Coord>,
 }
 
 #[derive(Copy, Clone)]
-struct Position {
+struct Coord {
     x: usize,
     y: usize
 }
@@ -121,7 +121,7 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
         // TODO: analyze everything
     }
 
-    me.pos = Position{x, y};
+    me.pos = Coord{x, y};
     me.lives = my_life;
     opp.lives = opp_life;
 
@@ -145,13 +145,13 @@ impl fmt::Debug for Map {
     }
 }
 
-impl fmt::Display for Position {
+impl fmt::Display for Coord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {}", self.x, self.y)
     }
 }
 
-impl fmt::Debug for Position {
+impl fmt::Debug for Coord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", (self.x, self.y))
     }
@@ -183,20 +183,20 @@ impl Map {
         Map { width, height, grid, water }
     }
 
-    fn water_positions(grid: &Vec<Vec<Cell>>) -> Vec<Position> {
+    fn water_positions(grid: &Vec<Vec<Cell>>) -> Vec<Coord> {
         grid.iter().enumerate().flat_map(|ir| {
             let (i, row) = ir;
             row.iter().enumerate().filter_map(move |jc| {
                 let (j, cell) = jc;
                 match cell {
-                    Cell::Water => Some( Position{x: j, y: i} ),
+                    Cell::Water => Some( Coord{x: j, y: i} ),
                     Cell::Land  => None
                 }
             })
-        }).collect::<Vec<Position>>()
+        }).collect::<Vec<Coord>>()
     }
 
-    fn water_it(&self) -> Iter<Position> {
+    fn water_it(&self) -> Iter<Coord> {
         self.water.iter()
     }
 }
@@ -205,7 +205,7 @@ impl Me {
     fn new() -> Me {
         Me {
             lives: 0,
-            pos: Position{x: 0, y: 0},
+            pos: Coord{x: 0, y: 0},
             visited: Vec::new(),
             torpedo_cooldown: 0,
         }
