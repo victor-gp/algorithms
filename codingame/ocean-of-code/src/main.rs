@@ -152,7 +152,12 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
     let opponent_orders = input_line.trim_matches('\n').to_string();
 
     if global.turn > 2 {
-        me.visited.push(me.pos)
+        me.visited.push(me.pos);
+
+        let action_seq = Action::seq_from_str(&opponent_orders);
+        for action in action_seq {
+            eprintln!("{}", action);
+        }
 
         // TODO: analyze everything
     }
@@ -348,5 +353,32 @@ impl Action {
         }
 
         viable_moves
+    }
+
+    fn from_str(s: &str) -> Option<Self> {
+        let mut tokens = s.split_whitespace();
+        let token = tokens.next()?;
+        match token {
+            "MOVE" => {
+                let dir = parse_input!(tokens.next()?, char);
+                Some(Action::Move{ dir })
+            },
+            "SURFACE" => Some(Action::Surface),
+            "TORPEDO" => {
+                let x = parse_input!(tokens.next()?, usize);
+                let y = parse_input!(tokens.next()?, usize);
+                Some( Action::Torpedo{ pos: Coord {x,y} } )
+            },
+            // TODO "MSG" => None
+            _ => {
+                eprintln!("Action::from_str: could not parse string \"{}\"", s);
+                None
+            }
+        }
+    }
+
+    fn seq_from_str(action_seq: &str) -> Vec<Action> {
+        action_seq.split("|").filter_map(|s| Action::from_str(s)).collect()
+        // return iter?
     }
 }
