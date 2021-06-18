@@ -25,6 +25,17 @@ fn main() {
     }
 }
 
+fn next_action(global: &Global, me: &mut Me, opp: &Opponent) -> Action {
+    let viable_moves = Action::viable_moves(me.pos, &global.map, &me.visited);
+
+    if viable_moves.is_empty() {
+        me.visited = Vec::new();
+        Action::Surface
+    } else {
+        viable_moves[0]
+    }
+}
+
 struct Global {
     map: Map,
     turn: usize,
@@ -48,6 +59,14 @@ struct Opponent {
     // visited: Vec<Coord>,
     // move_history: Vec<Move>,
     // cooldowns
+}
+
+#[derive(Copy, Clone)]
+enum Action {
+    Move { dir: char },
+    Surface,
+    Torpedo { pos: Coord },
+    // Msg { message: &'static str },
 }
 
 struct Map {
@@ -180,6 +199,22 @@ impl Cell {
     }
 }
 
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Action::Move{dir} => write!(f, "MOVE {} TORPEDO", dir),
+            Action::Surface => write!(f, "SURFACE"),
+            Action::Torpedo{pos} => write!(f, "TORPEDO {}", pos),
+        }
+    }
+}
+
+impl fmt::Debug for Action {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
 use std::slice::Iter;
 
 impl Map {
@@ -189,6 +224,25 @@ impl Map {
         Map { width, height, grid, water }
     }
 
+    fn cell_at(&self, coord: Coord) -> Option<&Cell> {
+        if self.is_within_bounds(coord) {
+            Some( &self.grid[coord.y][coord.x] )
+        } else {
+            None
+        }
+    }
+
+    fn is_within_bounds(&self, coord: Coord) -> bool {
+        coord.x < self.width
+            && coord.y < self.height
+    }
+
+    fn is_water(&self, coord: Coord) -> bool {
+        match self.cell_at(coord) {
+            None => false,
+            Some(cell) => cell.is_water()
+        }
+    }
     fn water_positions(grid: &Vec<Vec<Cell>>) -> Vec<Coord> {
         grid.iter().enumerate().flat_map(|ir| {
             let (i, row) = ir;
@@ -204,6 +258,17 @@ impl Map {
 
     fn water_it(&self) -> Iter<Coord> {
         self.water.iter()
+    }
+}
+
+impl Coord {
+    fn adjacents_clockwise(&self) -> [Coord; 4] {
+        [
+            Coord { y: self.y - 1, ..*self },
+            Coord { x: self.x + 1, ..*self },
+            Coord { y: self.y + 1, ..*self },
+            Coord { x: self.x - 1, ..*self }
+        ]
     }
 }
 
@@ -226,14 +291,6 @@ impl Opponent {
     }
 }
 
-#[derive(Copy, Clone)]
-enum Action {
-    Move { dir: char },
-    Surface,
-    Torpedo { pos: Coord },
-    // Msg { message: &'static str },
-}
-
 impl Action {
     fn viable_moves(pos: Coord, map: &Map, visited: &Vec<Coord>) -> Vec<Action> {
         let directions = ['N', 'E', 'S', 'W'];
@@ -250,65 +307,5 @@ impl Action {
         }
 
         viable_moves
-    }
-}
-
-impl fmt::Display for Action {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Action::Move{dir} => write!(f, "MOVE {} TORPEDO", dir),
-            Action::Surface => write!(f, "SURFACE"),
-            Action::Torpedo{pos} => write!(f, "TORPEDO {}", pos),
-        }
-    }
-}
-
-impl fmt::Debug for Action {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
-    }
-}
-
-impl Coord {
-    fn adjacents_clockwise(&self) -> [Coord; 4] {
-        [
-            Coord { y: self.y - 1, ..*self },
-            Coord { x: self.x + 1, ..*self },
-            Coord { y: self.y + 1, ..*self },
-            Coord { x: self.x - 1, ..*self }
-        ]
-    }
-}
-
-impl Map {
-    fn is_water(&self, coord: Coord) -> bool {
-        match self.cell_at(coord) {
-            None => false,
-            Some(cell) => cell.is_water()
-        }
-    }
-
-    fn is_within_bounds(&self, coord: Coord) -> bool {
-        coord.x < self.width
-            && coord.y < self.height
-    }
-
-    fn cell_at(&self, coord: Coord) -> Option<&Cell> {
-        if self.is_within_bounds(coord) {
-            Some( &self.grid[coord.y][coord.x] )
-        } else {
-            None
-        }
-    }
-}
-
-fn next_action(global: &Global, me: &mut Me, opp: &Opponent) -> Action {
-    let viable_moves = Action::viable_moves(me.pos, &global.map, &me.visited);
-
-    if viable_moves.is_empty() {
-        me.visited = Vec::new();
-        Action::Surface
-    } else {
-        viable_moves[0]
     }
 }
