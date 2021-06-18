@@ -230,6 +230,8 @@ impl Opponent {
 enum Action {
     Move { dir: char, load_torpedo: bool },
     Surface,
+    Torpedo { pos: Coord },
+    // Msg { message: &'static str },
 }
 
 impl Action {
@@ -260,8 +262,8 @@ impl fmt::Display for Action {
         match self {
             Action::Move{dir, load_torpedo} => write!(f, "MOVE {} TORPEDO", dir),
             Action::Surface => write!(f, "SURFACE"),
+            Action::Torpedo{pos} => write!(f, "TORPEDO {}", pos),
         }
-
     }
 }
 
