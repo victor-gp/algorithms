@@ -299,8 +299,8 @@ impl Map {
     }
 
     fn is_within_bounds(&self, coord: Coord) -> bool {
-        0 <= coord.x && coord.x < self.width as usize
-            && 0 <= coord.y && coord.y < self.height as usize
+        coord.x < self.width as usize
+            && coord.y < self.height as usize
     }
 
     fn cell_at(&self, coord: Coord) -> Option<&Cell> {
