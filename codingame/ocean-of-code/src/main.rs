@@ -1,5 +1,4 @@
 use std::io;
-use std::time::Instant;
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => ($x.trim().parse::<$t>().unwrap())
@@ -8,7 +7,7 @@ macro_rules! parse_input {
 use rand::seq::IteratorRandom;
 
 fn main() {
-    let start = Instant::now();
+    let mut timer = Timer::new();
 
     let mut global = read_starting_info();
     let mut me = Me::new();
@@ -18,10 +17,10 @@ fn main() {
     let first_pos = global.map.water_it().choose(&mut rand::thread_rng()).unwrap();
     println!("{}", first_pos);
 
-    eprintln!("Response time: {} ms", start.elapsed().as_millis());
+    timer.setup_stop();
 
     loop {
-        let start = Instant::now();
+        timer.start();
 
         global.turn += 1;
         read_turn_info(&global, &mut me, &mut opp);
@@ -29,7 +28,7 @@ fn main() {
         let action = next_action(&global, &mut me, &opp);
         println!("{}", action);
 
-        eprintln!("Response time: {} ms", start.elapsed().as_millis());
+        timer.stop(global.turn - 1);
     }
 }
 
@@ -91,6 +90,13 @@ struct Coord {
 }
 
 enum Cell { Water, Land }
+
+use std::time::{Duration, Instant};
+
+struct Timer {
+    start: Instant,
+    turns_acc: Duration
+}
 
 fn read_starting_info() -> Global {
     let mut input_line = String::new();
@@ -220,6 +226,32 @@ impl fmt::Display for Action {
 impl fmt::Debug for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self)
+    }
+}
+
+impl Timer {
+    fn new() -> Timer {
+        Timer {
+            start: Instant::now(),
+            turns_acc: Duration::new(0,0)
+        }
+    }
+
+    fn start(&mut self) {
+        self.start = Instant::now();
+    }
+
+    fn setup_stop(&self) {
+        eprintln!("Response time: {} ms", self.start.elapsed().as_millis())
+    }
+
+    fn stop(&mut self, turn: usize) {
+        let elapsed = self.start.elapsed();
+        self.turns_acc += elapsed;
+        let mean = self.turns_acc.div_f32(turn as f32);
+
+        eprintln!("Response time: {} ms / Mean: {} ms",
+            elapsed.as_millis(), mean.as_millis());
     }
 }
 
