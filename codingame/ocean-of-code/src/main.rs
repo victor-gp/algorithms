@@ -154,10 +154,8 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
     if global.turn > 2 {
         me.visited.push(me.pos);
 
-        let action_seq = OppAction::seq_from_str(&opponent_orders);
-        for action in action_seq {
-            eprintln!("{:?}", action);
-        }
+        let opp_actions = OppAction::seq_from_str(&opponent_orders);
+        eprintln!("{}", OppAction::string_from_seq(opp_actions));
 
         // TODO: analyze everything
     }
@@ -391,6 +389,12 @@ impl OppAction {
     fn seq_from_str(action_seq: &str) -> Vec<Self> {
         action_seq.split("|").filter_map(|s| Self::from_str(s)).collect()
         // return iter?
+    }
+
+    fn string_from_seq(seq: Vec<Self>) -> String {
+        seq.iter().map(|action| {
+            format!("{:?}", action)
+        }).collect::< Vec<String> >().join("|")
     }
 }
 
