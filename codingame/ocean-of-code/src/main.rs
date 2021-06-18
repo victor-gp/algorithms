@@ -235,21 +235,21 @@ enum Action {
 }
 
 impl Action {
-    fn possible_moves(pos: Coord, map: &Map, visited: &Vec<Coord>) -> Vec<Action> {
+    fn viable_moves(pos: Coord, map: &Map, visited: &Vec<Coord>) -> Vec<Action> {
         let directions = ['N', 'E', 'S', 'W'];
         let adjacents = pos.adjacents_clockwise();
-        let mut valid_moves = Vec::new();
+        let mut viable_moves = Vec::new();
 
         for i in 0..=3 {
             let pos_i = adjacents[i];
             if map.is_water(pos_i) && !visited.contains(&pos_i) {
-                valid_moves.push(
+                viable_moves.push(
                     Action::Move{ dir: directions[i] }
                 );
             }
         }
 
-        valid_moves
+        viable_moves
     }
 }
 
@@ -303,12 +303,12 @@ impl Map {
 }
 
 fn next_action(global: &Global, me: &mut Me, opp: &Opponent) -> Action {
-    let possible_moves = Action::possible_moves(me.pos, &global.map, &me.visited);
+    let viable_moves = Action::viable_moves(me.pos, &global.map, &me.visited);
 
-    if possible_moves.is_empty() {
+    if viable_moves.is_empty() {
         me.visited = Vec::new();
         Action::Surface
     } else {
-        possible_moves[0]
+        viable_moves[0]
     }
 }
