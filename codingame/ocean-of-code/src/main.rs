@@ -43,6 +43,7 @@ fn next_action(global: &Global, me: &mut Me, opp: &Opponent) -> Action {
     }
 }
 
+#[allow(dead_code)]
 struct Global {
     map: Map,
     turn: usize,
@@ -107,17 +108,16 @@ fn read_starting_info() -> Global {
     let my_id = parse_input!(inputs[2], usize);
 
     let mut grid = Vec::new();
-    for i in 0..height {
+    for _ in 0..height {
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
         let line = input_line.trim_matches('\n').to_string();
         // eprintln!("{}",line);
 
-        grid.push(
-            line.chars()
+        let cells_row = line.chars()
             .map(|c| Cell::from_char(c))
-            .collect::<Vec<Cell>>()
-        )
+            .collect::<Vec<Cell>>();
+        grid.push(cells_row);
     }
 
     let map = Map::new(width, height, grid);
@@ -131,6 +131,7 @@ fn read_starting_info() -> Global {
     }
 }
 
+#[allow(unused_variables)]
 fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
     let mut input_line = String::new();
     io::stdin().read_line(&mut input_line).unwrap();
