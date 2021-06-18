@@ -292,13 +292,23 @@ impl PartialEq for Coord {
 
 impl Map {
     fn is_water(&self, coord: Coord) -> bool {
-        self.is_within_bounds(coord)
-            && self.grid[coord.y][coord.x].is_water()
+        match self.cell_at(coord) {
+            None => false,
+            Some(cell) => cell.is_water()
+        }
     }
 
     fn is_within_bounds(&self, coord: Coord) -> bool {
         0 <= coord.x && coord.x < self.width as usize
             && 0 <= coord.y && coord.y < self.height as usize
+    }
+
+    fn cell_at(&self, coord: Coord) -> Option<&Cell> {
+        if self.is_within_bounds(coord) {
+            Some( &self.grid[coord.y][coord.x] )
+        } else {
+            None
+        }
     }
 }
 
