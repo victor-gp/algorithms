@@ -1,4 +1,6 @@
 use std::io;
+use std::time::Instant;
+
 macro_rules! parse_input {
     ($x:expr, $t:ident) => ($x.trim().parse::<$t>().unwrap())
 }
@@ -6,22 +8,28 @@ macro_rules! parse_input {
 use rand::seq::IteratorRandom;
 
 fn main() {
+    let start = Instant::now();
+
     let mut global = read_starting_info();
+    let mut me = Me::new();
+    let mut opp = Opponent::new();
 
     // 1st turn: choose a starting position
     let first_pos = global.map.water_it().choose(&mut rand::thread_rng()).unwrap();
     println!("{}", first_pos);
 
-    let mut me = Me::new();
-    let mut opp = Opponent::new();
+    eprintln!("Response time: {} ms", start.elapsed().as_millis());
 
     loop {
+        let start = Instant::now();
+
         global.turn += 1;
         read_turn_info(&global, &mut me, &mut opp);
 
         let action = next_action(&global, &mut me, &opp);
-
         println!("{}", action);
+
+        eprintln!("Response time: {} ms", start.elapsed().as_millis());
     }
 }
 
