@@ -19,7 +19,7 @@ fn main() {
         global.turn += 1;
         read_turn_info(&global, &mut me, &mut opp);
 
-        let action = next_action(&global, &me, &opp);
+        let action = next_action(&global, &mut me, &opp);
 
         println!("{}", action);
     }
@@ -227,10 +227,13 @@ impl Opponent {
 }
 
 #[derive(Copy, Clone)]
-struct Move { dir: char, load_torpedo: bool }
+enum Action {
+    Move { dir: char, load_torpedo: bool },
+    Surface,
+}
 
-impl Move {
-    fn possible_moves(pos: Coord, map: &Map, visited: &Vec<Coord>) -> Vec<Move> {
+impl Action {
+    fn possible_moves(pos: Coord, map: &Map, visited: &Vec<Coord>) -> Vec<Action> {
         let directions = ['N', 'E', 'S', 'W'];
         let adjacents = pos.adjacents_clockwise();
         let mut valid_moves = Vec::new();
@@ -241,7 +244,7 @@ impl Move {
             let pos_i = adjacents[i];
             if map.is_water(pos_i) && !visited.contains(&pos_i) {
                 valid_moves.push(
-                    Move{ dir: directions[i], load_torpedo: true }
+                    Action::Move{ dir: directions[i], load_torpedo: true }
                 );
             }
         }
@@ -252,13 +255,17 @@ impl Move {
     }
 }
 
-impl fmt::Display for Move {
+impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "MOVE {} TORPEDO", self.dir)
+        match self {
+            Action::Move{dir, load_torpedo} => write!(f, "MOVE {} TORPEDO", dir),
+            Action::Surface => write!(f, "SURFACE"),
+        }
+
     }
 }
 
-impl fmt::Debug for Move {
+impl fmt::Debug for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self)
     }
@@ -293,11 +300,12 @@ impl Map {
     }
 }
 
-fn next_action(global: &Global, me: &Me, opp: &Opponent) -> Move {
-    let possible_moves = Move::possible_moves(me.pos, &global.map, &me.visited);
+fn next_action(global: &Global, me: &mut Me, opp: &Opponent) -> Action {
+    let possible_moves = Action::possible_moves(me.pos, &global.map, &me.visited);
 
     if possible_moves.is_empty() {
-        panic!("no possible moves!")
+        me.visited = Vec::new();
+        Action::Surface
     } else {
         possible_moves[0]
     }
