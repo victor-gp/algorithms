@@ -228,7 +228,7 @@ impl Opponent {
 
 #[derive(Copy, Clone)]
 enum Action {
-    Move { dir: char, load_torpedo: bool },
+    Move { dir: char },
     Surface,
     Torpedo { pos: Coord },
     // Msg { message: &'static str },
@@ -246,7 +246,7 @@ impl Action {
             let pos_i = adjacents[i];
             if map.is_water(pos_i) && !visited.contains(&pos_i) {
                 valid_moves.push(
-                    Action::Move{ dir: directions[i], load_torpedo: true }
+                    Action::Move{ dir: directions[i] }
                 );
             }
         }
@@ -260,7 +260,7 @@ impl Action {
 impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Action::Move{dir, load_torpedo} => write!(f, "MOVE {} TORPEDO", dir),
+            Action::Move{dir} => write!(f, "MOVE {} TORPEDO", dir),
             Action::Surface => write!(f, "SURFACE"),
             Action::Torpedo{pos} => write!(f, "TORPEDO {}", pos),
         }
