@@ -154,9 +154,9 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
     if global.turn > 2 {
         me.visited.push(me.pos);
 
-        let action_seq = Action::seq_from_str(&opponent_orders);
+        let action_seq = OppAction::seq_from_str(&opponent_orders);
         for action in action_seq {
-            eprintln!("{}", action);
+            eprintln!("{:?}", action);
         }
 
         // TODO: analyze everything
@@ -354,22 +354,33 @@ impl Action {
 
         viable_moves
     }
+}
 
+enum OppAction {
+    Move { dir: char },
+    Surface { sector: usize },
+    Torpedo { pos: Coord },
+}
+
+impl OppAction {
     fn from_str(s: &str) -> Option<Self> {
         let mut tokens = s.split_whitespace();
         let token = tokens.next()?;
         match token {
             "MOVE" => {
                 let dir = parse_input!(tokens.next()?, char);
-                Some(Action::Move{ dir })
+                Some( Self::Move{ dir } )
             },
-            "SURFACE" => Some(Action::Surface),
+            "SURFACE" => {
+                let sector = parse_input!(tokens.next()?, usize);
+                Some( Self::Surface{ sector: sector } )
+            },
             "TORPEDO" => {
                 let x = parse_input!(tokens.next()?, usize);
                 let y = parse_input!(tokens.next()?, usize);
-                Some( Action::Torpedo{ pos: Coord {x,y} } )
+                Some( Self::Torpedo{ pos: Coord {x,y} } )
             },
-            // TODO "MSG" => None
+            // TODO "MSG" => None // no need for this? it's not on the opponent's API?
             _ => {
                 eprintln!("Action::from_str: could not parse string \"{}\"", s);
                 None
@@ -377,8 +388,18 @@ impl Action {
         }
     }
 
-    fn seq_from_str(action_seq: &str) -> Vec<Action> {
-        action_seq.split("|").filter_map(|s| Action::from_str(s)).collect()
+    fn seq_from_str(action_seq: &str) -> Vec<Self> {
+        action_seq.split("|").filter_map(|s| Self::from_str(s)).collect()
         // return iter?
+    }
+}
+
+impl fmt::Debug for OppAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Move{dir} => write!(f, "MOVE {}", dir),
+            Self::Surface{sector} => write!(f, "SURFACE {}", sector),
+            Self::Torpedo{pos} => write!(f, "TORPEDO {}", pos),
+        }
     }
 }
