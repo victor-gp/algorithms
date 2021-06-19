@@ -155,7 +155,7 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
         me.visited.push(me.pos);
 
         let opp_actions = OppAction::seq_from_str(&opponent_orders);
-        opp.analyze_actions(&global, &opp_actions);
+        opp.analyze_actions(&global.map, &opp_actions);
 
         // TODO: analyze everything
     }
@@ -411,13 +411,13 @@ impl fmt::Debug for OppAction {
 }
 
 impl Opponent {
-    fn analyze_actions(&mut self, global: &Global, actions: &Vec<OppAction>) {
+    fn analyze_actions(&mut self, map: &Map, actions: &Vec<OppAction>) {
         for action in actions {
             match action {
                 OppAction::Move{dir} => {
                     if !self.feasible_ps.is_empty() {
                         self.feasible_ps.retain(
-                            |pos| global.map.is_viable_move(*pos, *dir)
+                            |pos| map.is_viable_move(*pos, *dir)
                         );
 
                         for i in 0 .. self.feasible_ps.len() {
@@ -427,14 +427,13 @@ impl Opponent {
                 },
                 OppAction::Surface{sector} => {
                     if self.feasible_ps.is_empty() {
-                        self.feasible_ps = global.map.cells_from_sector(*sector);
+                        self.feasible_ps = map.cells_from_sector(*sector);
                         self.feasible_ps.retain(
-                            |pos| global.map.is_water(*pos)
+                            |pos| map.is_water(*pos)
                         );
-                    }
-                    else {
+                    } else {
                         self.feasible_ps.retain(
-                            |pos| global.map.belongs_to_sector(pos, *sector)
+                            |pos| map.belongs_to_sector(pos, *sector)
                         )
                     }
                 },
@@ -462,8 +461,8 @@ impl Map {
 
     fn belongs_to_sector(&self, pos: &Coord, sector_id: usize) -> bool {
         let (min_x, min_y) = self.sector_addr(sector_id);
-        min_x <= pos.x && pos.x < min_x + 4
-            && min_y <= pos.y && pos.y < min_y + 4
+        min_x <= pos.x && pos.x <= min_x + 4
+            && min_y <= pos.y && pos.y <= min_y + 4
     }
 
     fn is_viable_move(&self, pos: Coord, dir: char) -> bool {
