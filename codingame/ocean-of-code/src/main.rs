@@ -63,7 +63,7 @@ struct Me {
 
 struct Opponent {
     lives: usize,
-    // likely_pos: Iter<'static, Coord>,
+    feasible_ps: Vec<Coord>,
     // visited: Vec<Coord>,
     // move_history: Vec<Move>,
     // cooldowns
@@ -155,7 +155,7 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
         me.visited.push(me.pos);
 
         let opp_actions = OppAction::seq_from_str(&opponent_orders);
-        eprintln!("{}", OppAction::string_from_seq(opp_actions));
+        opp.analyze_actions(&global, &opp_actions);
 
         // TODO: analyze everything
     }
@@ -331,6 +331,7 @@ impl Opponent {
     fn new() -> Opponent {
         Opponent {
             lives: 0,
+            feasible_ps: Vec::new(),
         }
     }
 }
@@ -391,6 +392,7 @@ impl OppAction {
         // return iter?
     }
 
+    #[allow(dead_code)]
     fn string_from_seq(seq: Vec<Self>) -> String {
         seq.iter().map(|action| {
             format!("{:?}", action)
@@ -405,5 +407,66 @@ impl fmt::Debug for OppAction {
             Self::Surface{sector} => write!(f, "SURFACE {}", sector),
             Self::Torpedo{pos} => write!(f, "TORPEDO {}", pos),
         }
+    }
+}
+
+impl Opponent {
+    fn analyze_actions(&mut self, global: &Global, actions: &Vec<OppAction>) {
+        for action in actions {
+            match action {
+                OppAction::Surface{sector} => {
+                    if self.feasible_ps.is_empty() {
+                        self.feasible_ps = global.map.cells_from_sector(*sector);
+                        self.feasible_ps.retain(
+                            |pos| global.map.is_water(*pos)
+                        );
+                    }
+                    else {
+                        self.feasible_ps.retain(
+                            |pos| global.map.belongs_to_sector(pos, *sector)
+                        )
+                    }
+                    eprintln!("{:?}", self.feasible_ps)
+                },
+                _ => {}
+            }
+        }
+    }
+}
+
+impl Map {
+    fn cells_from_sector(&self, sector_id: usize) -> Vec<Coord> {
+        let (min_x, min_y) = self.sector_addr(sector_id);
+        Coord::range(min_x, min_x + 4, min_y, min_y + 4)
+    }
+
+    fn sector_addr(&self, sector_id: usize) -> (usize, usize) {
+        // 5x5 cells/sector, sectors numbered 1..9 first horizontal then vertical
+        let sector_addr = sector_id - 1;
+        let min_y = (sector_addr / 3) * 5;
+        let min_x = (sector_addr % 3) * 5;
+
+        (min_x, min_y)
+    }
+
+    fn belongs_to_sector(&self, pos: &Coord, sector_id: usize) -> bool {
+        let (min_x, min_y) = self.sector_addr(sector_id);
+        min_x <= pos.x && pos.x < min_x + 4
+            && min_y <= pos.y && pos.y < min_y + 4
+    }
+
+    }
+}
+
+impl Coord {
+    fn range(min_x: usize, max_x: usize, min_y: usize, max_y: usize) -> Vec<Coord> {
+        let mut range = Vec::new();
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                range.push(Coord{ x, y });
+            }
+        }
+
+        range
     }
 }
