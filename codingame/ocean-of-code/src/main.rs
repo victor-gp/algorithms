@@ -414,6 +414,17 @@ impl Opponent {
     fn analyze_actions(&mut self, global: &Global, actions: &Vec<OppAction>) {
         for action in actions {
             match action {
+                OppAction::Move{dir} => {
+                    if !self.feasible_ps.is_empty() {
+                        self.feasible_ps.retain(
+                            |pos| global.map.is_viable_move(*pos, *dir)
+                        );
+
+                        for i in 0 .. self.feasible_ps.len() {
+                            self.feasible_ps[i] = self.feasible_ps[i]._move(*dir)
+                        }
+                    }
+                },
                 OppAction::Surface{sector} => {
                     if self.feasible_ps.is_empty() {
                         self.feasible_ps = global.map.cells_from_sector(*sector);
@@ -426,10 +437,10 @@ impl Opponent {
                             |pos| global.map.belongs_to_sector(pos, *sector)
                         )
                     }
-                    eprintln!("{:?}", self.feasible_ps)
                 },
                 _ => {}
             }
+            eprintln!("{:?}", self.feasible_ps)
         }
     }
 }
@@ -455,6 +466,9 @@ impl Map {
             && min_y <= pos.y && pos.y < min_y + 4
     }
 
+    fn is_viable_move(&self, pos: Coord, dir: char) -> bool {
+        let dest = pos._move(dir);
+        self.is_within_bounds(dest) && self.is_water(dest)
     }
 }
 
@@ -468,5 +482,15 @@ impl Coord {
         }
 
         range
+    }
+
+    fn _move(&self, dir: char) -> Coord {
+        match dir {
+            'N' => Coord { y: self.y - 1, ..*self },
+            'E' => Coord { x: self.x + 1, ..*self },
+            'S' => Coord { y: self.y + 1, ..*self },
+            'W' => Coord { x: self.x - 1, ..*self },
+            _ => panic!("Coord::_move(): not a direction char?")
+        }
     }
 }
