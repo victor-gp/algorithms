@@ -73,7 +73,7 @@ struct Opponent {
 enum Action {
     Move { dir: char },
     Surface,
-    Torpedo { pos: Coord },
+    Torpedo { target: Coord },
     // Msg { message: &'static str },
 }
 
@@ -222,7 +222,7 @@ impl fmt::Display for Action {
         match self {
             Action::Move{dir} => write!(f, "MOVE {} TORPEDO", dir),
             Action::Surface => write!(f, "SURFACE"),
-            Action::Torpedo{pos} => write!(f, "TORPEDO {}", pos),
+            Action::Torpedo{target} => write!(f, "TORPEDO {}", target),
         }
     }
 }
@@ -358,7 +358,7 @@ impl Action {
 enum OppAction {
     Move { dir: char },
     Surface { sector: usize },
-    Torpedo { pos: Coord },
+    Torpedo { target: Coord },
 }
 
 impl OppAction {
@@ -377,7 +377,7 @@ impl OppAction {
             "TORPEDO" => {
                 let x = parse_input!(tokens.next()?, usize);
                 let y = parse_input!(tokens.next()?, usize);
-                Some( Self::Torpedo{ pos: Coord {x,y} } )
+                Some( Self::Torpedo{ target: Coord {x,y} } )
             },
             // TODO "MSG" => None // no need for this? it's not on the opponent's API?
             _ => {
@@ -405,7 +405,7 @@ impl fmt::Debug for OppAction {
         match self {
             Self::Move{dir} => write!(f, "MOVE {}", dir),
             Self::Surface{sector} => write!(f, "SURFACE {}", sector),
-            Self::Torpedo{pos} => write!(f, "TORPEDO {}", pos),
+            Self::Torpedo{target} => write!(f, "TORPEDO {}", target),
         }
     }
 }
@@ -437,7 +437,14 @@ impl Opponent {
                         )
                     }
                 },
-                _ => {}
+                OppAction::Torpedo{target} => {
+                    if self.feasible_ps.is_empty() {
+                    } else {
+                        self.feasible_ps.retain(
+                            |pos| map.are_within_distance(*pos, *target, 4)
+                        )
+                    }
+                },
             }
             eprintln!("{:?}", self.feasible_ps)
         }
@@ -469,6 +476,28 @@ impl Map {
         let dest = pos._move(dir);
         self.is_within_bounds(dest) && self.is_water(dest)
     }
+
+    // invariant: a, b are coords to water cells
+    fn are_within_distance(&self, a: Coord, b: Coord, dist: usize) -> bool {
+        if a == b {
+            return true
+        } else if dist == 0 || !a.le_distance(b, dist) {
+            return false
+        }
+
+        // NICE: maybe keep track of visited?
+        //       - with an inner method (_are...) and a shared visited vector.
+        //       - not very critical with dist=4 & Coord::le_distance()
+        for coord in &a.neighbors() {
+            if self.is_within_bounds(*coord) && self.is_water(*coord) {
+                if self.are_within_distance(*coord, b, dist-1) {
+                    return true
+                }
+            }
+        }
+
+        false
+    }
 }
 
 impl Coord {
@@ -491,5 +520,23 @@ impl Coord {
             'W' => Coord { x: self.x - 1, ..*self },
             _ => panic!("Coord::_move(): not a direction char?")
         }
+    }
+
+    fn neighbors(&self) -> [Coord; 4] {
+        let neighbors = [
+            Coord{ x: self.x - 1, ..(*self) },
+            Coord{ x: self.x + 1, ..(*self) },
+            Coord{ y: self.y - 1, ..(*self) },
+            Coord{ y: self.y + 1, ..(*self) }
+        ];
+
+        neighbors
+    }
+
+    fn le_distance(&self, other: Coord, distance: usize) -> bool {
+        let distance_x = (self.x as isize - other.x as isize).abs();
+        let distance_y = (self.y as isize - other.y as isize).abs();
+
+        distance_x + distance_y <= distance as isize
     }
 }
