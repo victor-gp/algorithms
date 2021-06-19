@@ -498,6 +498,36 @@ impl Map {
 
         false
     }
+
+    fn cells_within_range(&self, pos: Coord, range: usize) -> Vec<Coord> {
+        let max_possible = (range+1).pow(2) + range.pow(2);
+        let mut coords = Vec::with_capacity(max_possible);
+        coords.push(pos);
+        let (mut pre_iter_start, mut iter_start) = (0, 1);
+
+        // (Failed) Rustacean BFS
+        for _ in 1..=range {
+            let mut tmp_vec: Vec<Coord> = Vec::new();
+            for pos in &coords[pre_iter_start..iter_start] {
+                let unchecked_coords = pos.neighbors();
+                let neighbors_it = unchecked_coords.into_iter().filter(|coord| {
+                    self.is_within_bounds(*coord) && self.is_water(*coord)
+                });
+                let new_neighbors = neighbors_it.filter(
+                    |neighbor| ! coords[pre_iter_start..].contains(neighbor)
+                );
+
+                tmp_vec.extend(new_neighbors);
+                // &coords[iter_start..].copy_from_slice(&mut tmp_vec[..]);
+                // doesn't let me borrow here...
+            }
+            coords.append(&mut tmp_vec);
+            pre_iter_start = iter_start;
+            iter_start = coords.len();
+        }
+
+        coords
+    }
 }
 
 impl Coord {
@@ -522,15 +552,13 @@ impl Coord {
         }
     }
 
-    fn neighbors(&self) -> [Coord; 4] {
-        let neighbors = [
+    fn neighbors(&self) -> Vec<Coord> {
+        vec![
             Coord{ x: self.x - 1, ..(*self) },
             Coord{ x: self.x + 1, ..(*self) },
             Coord{ y: self.y - 1, ..(*self) },
             Coord{ y: self.y + 1, ..(*self) }
-        ];
-
-        neighbors
+        ]
     }
 
     fn le_distance(&self, other: Coord, distance: usize) -> bool {
