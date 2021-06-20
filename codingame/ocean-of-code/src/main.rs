@@ -531,9 +531,7 @@ impl Opponent {
                         self.feasible_ps = self.feasible_ps.iter().filter_map(|pos| {
                             if map.is_viable_move(*pos, *dir) {
                                 Some(pos.after_move(*dir))
-                            } else {
-                                None
-                            }
+                            } else { None }
                         }).collect()
                     }
                 },
@@ -579,7 +577,7 @@ impl Me {
         let mut action_seq: Vec<Action> = Vec::new();
         let viable_moves = self.viable_moves(&global.map);
         let have_to_surface = viable_moves.is_empty();
-        let may_launch_torpedo = self.may_launch_torpedo(opp, &global.map);
+        let may_launch_torpedo = self.may_launch_torpedo(&opp, &global.map);
         eprintln!("may launch torpedo: {:?}", may_launch_torpedo);
 
         if have_to_surface {
@@ -617,6 +615,7 @@ impl Me {
             && opp.is_position_known()
             && match map.distance(&self.pos, &opp.position()) {
                 // torpedo range (4) + impact area (1) + approaching move (1)
+                // FIXME: impact area may be 2, counting diagonals...
                 Some(distance) => distance <= 6,
                 None => false
             }
