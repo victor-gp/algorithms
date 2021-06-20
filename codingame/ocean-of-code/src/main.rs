@@ -77,6 +77,12 @@ enum Action {
     // Msg { message: &'static str },
 }
 
+enum OppAction {
+    Move { dir: char },
+    Surface { sector: usize },
+    Torpedo { target: Coord },
+}
+
 struct Map {
     width: usize,
     height: usize,
@@ -85,6 +91,7 @@ struct Map {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
+// agnostic of Map, doesnt't care about bounds or Water/Land
 struct Coord {
     x: usize,
     y: usize
@@ -233,6 +240,55 @@ impl fmt::Debug for Action {
     }
 }
 
+impl fmt::Debug for OppAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Move{dir} => write!(f, "MOVE {}", dir),
+            Self::Surface{sector} => write!(f, "SURFACE {}", sector),
+            Self::Torpedo{target} => write!(f, "TORPEDO {}", target),
+        }
+    }
+}
+
+impl OppAction {
+    fn from_str(s: &str) -> Option<Self> {
+        let mut tokens = s.split_whitespace();
+        let token = tokens.next()?;
+        match token {
+            "MOVE" => {
+                let dir = parse_input!(tokens.next()?, char);
+                Some( Self::Move{ dir } )
+            },
+            "SURFACE" => {
+                let sector = parse_input!(tokens.next()?, usize);
+                Some( Self::Surface{ sector: sector } )
+            },
+            "TORPEDO" => {
+                let x = parse_input!(tokens.next()?, usize);
+                let y = parse_input!(tokens.next()?, usize);
+                Some( Self::Torpedo{ target: Coord {x,y} } )
+            },
+            // TODO "MSG" => None // no need for this? it's not on the opponent's API?
+            _ => {
+                eprintln!("Action::from_str: could not parse string \"{}\"", s);
+                None
+            }
+        }
+    }
+
+    fn seq_from_str(action_seq: &str) -> Vec<Self> {
+        action_seq.split("|").filter_map(|s| Self::from_str(s)).collect()
+        // return iter?
+    }
+
+    #[allow(dead_code)]
+    fn string_from_seq(seq: Vec<Self>) -> String {
+        seq.iter().map(|action| {
+            format!("{:?}", action)
+        }).collect::< Vec<String> >().join("|")
+    }
+}
+
 impl Timer {
     fn new() -> Timer {
         Timer {
@@ -289,6 +345,7 @@ impl Map {
             Some(cell) => cell.is_water()
         }
     }
+
     fn water_positions(grid: &Vec<Vec<Cell>>) -> Vec<Coord> {
         grid.iter().enumerate().flat_map(|ir| {
             let (i, row) = ir;
@@ -304,179 +361,6 @@ impl Map {
 
     fn water_it(&self) -> Iter<Coord> {
         self.water.iter()
-    }
-}
-
-impl Coord {
-    fn adjacents_clockwise(&self) -> [Coord; 4] {
-        [
-            Coord { y: self.y - 1, ..*self },
-            Coord { x: self.x + 1, ..*self },
-            Coord { y: self.y + 1, ..*self },
-            Coord { x: self.x - 1, ..*self }
-        ]
-    }
-}
-
-impl Me {
-    fn new() -> Me {
-        Me {
-            lives: 0,
-            pos: Coord{x: 0, y: 0},
-            visited: Vec::new(),
-            torpedo_cooldown: 0,
-        }
-    }
-}
-
-impl Opponent {
-    fn new() -> Opponent {
-        Opponent {
-            lives: 0,
-            feasible_ps: Vec::new(),
-        }
-    }
-}
-
-impl Action {
-    fn viable_moves(pos: Coord, map: &Map, visited: &Vec<Coord>) -> Vec<Action> {
-        let directions = ['N', 'E', 'S', 'W'];
-        let adjacents = pos.adjacents_clockwise();
-        let mut viable_moves = Vec::new();
-
-        for i in 0..=3 {
-            let pos_i = adjacents[i];
-            if map.is_water(pos_i) && !visited.contains(&pos_i) {
-                viable_moves.push(
-                    Action::Move{ dir: directions[i] }
-                );
-            }
-        }
-
-        viable_moves
-    }
-}
-
-enum OppAction {
-    Move { dir: char },
-    Surface { sector: usize },
-    Torpedo { target: Coord },
-}
-
-impl OppAction {
-    fn from_str(s: &str) -> Option<Self> {
-        let mut tokens = s.split_whitespace();
-        let token = tokens.next()?;
-        match token {
-            "MOVE" => {
-                let dir = parse_input!(tokens.next()?, char);
-                Some( Self::Move{ dir } )
-            },
-            "SURFACE" => {
-                let sector = parse_input!(tokens.next()?, usize);
-                Some( Self::Surface{ sector: sector } )
-            },
-            "TORPEDO" => {
-                let x = parse_input!(tokens.next()?, usize);
-                let y = parse_input!(tokens.next()?, usize);
-                Some( Self::Torpedo{ target: Coord {x,y} } )
-            },
-            // TODO "MSG" => None // no need for this? it's not on the opponent's API?
-            _ => {
-                eprintln!("Action::from_str: could not parse string \"{}\"", s);
-                None
-            }
-        }
-    }
-
-    fn seq_from_str(action_seq: &str) -> Vec<Self> {
-        action_seq.split("|").filter_map(|s| Self::from_str(s)).collect()
-        // return iter?
-    }
-
-    #[allow(dead_code)]
-    fn string_from_seq(seq: Vec<Self>) -> String {
-        seq.iter().map(|action| {
-            format!("{:?}", action)
-        }).collect::< Vec<String> >().join("|")
-    }
-}
-
-impl fmt::Debug for OppAction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Move{dir} => write!(f, "MOVE {}", dir),
-            Self::Surface{sector} => write!(f, "SURFACE {}", sector),
-            Self::Torpedo{target} => write!(f, "TORPEDO {}", target),
-        }
-    }
-}
-
-impl Opponent {
-    fn analyze_actions(&mut self, map: &Map, actions: &Vec<OppAction>) {
-        for action in actions {
-            match action {
-                OppAction::Move{dir} => {
-                    if !self.feasible_ps.is_empty() {
-                        self.feasible_ps = self.feasible_ps.iter().filter_map(|pos| {
-                            if map.is_viable_move(*pos, *dir) {
-                                Some(pos.after_move(*dir))
-                            } else {
-                                None
-                            }
-                        }).collect()
-                    }
-                },
-                OppAction::Surface{sector} => {
-                    if self.feasible_ps.is_empty() {
-                        self.feasible_ps = map.water_cells_from_sector(*sector);
-                    } else if self.feasible_ps.len() != 1 {
-                        self.feasible_ps.retain(
-                            |pos| map.belongs_to_sector(pos, *sector)
-                        )
-                    }
-                },
-                OppAction::Torpedo{target} => {
-                    // TODO: account for "you can also damage yourself with a torpedo"
-                    //       note: torpedo affectation range includes diagonals
-                    if self.feasible_ps.is_empty() {
-                        self.feasible_ps = map.cells_within_distance(*target, 4)
-                    } else if self.feasible_ps.len() != 1 {
-                        self.feasible_ps.retain(
-                            |pos| map.are_within_distance(*pos, *target, 4)
-                        )
-                    }
-                },
-            }
-
-            eprintln!("{:?}", self.feasible_ps)
-        }
-    }
-}
-
-impl Map {
-    fn water_cells_from_sector(&self, sector_id: usize) -> Vec<Coord> {
-        let (min_x, min_y) = self.sector_addr(sector_id);
-        let cells_from_sector = Coord::range(min_x, min_x + 4, min_y, min_y + 4);
-
-        cells_from_sector.into_iter().filter(
-            |coord| self.cell_at(*coord).unwrap().is_water()
-        ).collect()
-    }
-
-    fn sector_addr(&self, sector_id: usize) -> (usize, usize) {
-        // 5x5 cells/sector, sectors numbered 1..9 first horizontal then vertical
-        let sector_addr = sector_id - 1;
-        let min_y = (sector_addr / 3) * 5;
-        let min_x = (sector_addr % 3) * 5;
-
-        (min_x, min_y)
-    }
-
-    fn belongs_to_sector(&self, pos: &Coord, sector_id: usize) -> bool {
-        let (min_x, min_y) = self.sector_addr(sector_id);
-        min_x <= pos.x && pos.x <= min_x + 4
-            && min_y <= pos.y && pos.y <= min_y + 4
     }
 
     fn is_viable_move(&self, pos: Coord, dir: char) -> bool {
@@ -531,20 +415,33 @@ impl Map {
 
         cells
     }
+
+    fn belongs_to_sector(&self, pos: &Coord, sector_id: usize) -> bool {
+        let (min_x, min_y) = self.sector_addr(sector_id);
+        min_x <= pos.x && pos.x <= min_x + 4
+            && min_y <= pos.y && pos.y <= min_y + 4
+    }
+
+    fn water_cells_from_sector(&self, sector_id: usize) -> Vec<Coord> {
+        let (min_x, min_y) = self.sector_addr(sector_id);
+        let cells_from_sector = Coord::range(min_x, min_x + 4, min_y, min_y + 4);
+
+        cells_from_sector.into_iter().filter(
+            |coord| self.cell_at(*coord).unwrap().is_water()
+        ).collect()
+    }
+
+    fn sector_addr(&self, sector_id: usize) -> (usize, usize) {
+        // 5x5 cells/sector, sectors numbered 1..9 first horizontal then vertical
+        let sector_addr = sector_id - 1;
+        let min_y = (sector_addr / 3) * 5;
+        let min_x = (sector_addr % 3) * 5;
+
+        (min_x, min_y)
+    }
 }
 
 impl Coord {
-    fn range(min_x: usize, max_x: usize, min_y: usize, max_y: usize) -> Vec<Coord> {
-        let mut range = Vec::new();
-        for y in min_y..=max_y {
-            for x in min_x..=max_x {
-                range.push(Coord{ x, y });
-            }
-        }
-
-        range
-    }
-
     fn after_move(&self, dir: char) -> Coord {
         match dir {
             'N' => Coord { y: self.y - 1, ..*self },
@@ -564,11 +461,110 @@ impl Coord {
         ]
     }
 
+    fn range(min_x: usize, max_x: usize, min_y: usize, max_y: usize) -> Vec<Coord> {
+        let mut range = Vec::new();
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                range.push(Coord{ x, y });
+            }
+        }
+
+        range
+    }
+
     // min (possible) distance, doesn't account for cells being Water/Land
     fn min_distance(&self, other: Coord) -> usize {
         let distance_x = (self.x as isize - other.x as isize).abs();
         let distance_y = (self.y as isize - other.y as isize).abs();
 
         (distance_x + distance_y) as usize
+    }
+
+    fn adjacents_clockwise(&self) -> [Coord; 4] {
+        [
+            Coord { y: self.y - 1, ..*self },
+            Coord { x: self.x + 1, ..*self },
+            Coord { y: self.y + 1, ..*self },
+            Coord { x: self.x - 1, ..*self }
+        ]
+    }
+}
+
+impl Me {
+    fn new() -> Me {
+        Me {
+            lives: 0,
+            pos: Coord{x: 0, y: 0},
+            visited: Vec::new(),
+            torpedo_cooldown: 0,
+        }
+    }
+}
+
+impl Opponent {
+    fn new() -> Opponent {
+        Opponent {
+            lives: 0,
+            feasible_ps: Vec::new(),
+        }
+    }
+
+    fn analyze_actions(&mut self, map: &Map, actions: &Vec<OppAction>) {
+        for action in actions {
+            match action {
+                OppAction::Move{dir} => {
+                    if !self.feasible_ps.is_empty() {
+                        self.feasible_ps = self.feasible_ps.iter().filter_map(|pos| {
+                            if map.is_viable_move(*pos, *dir) {
+                                Some(pos.after_move(*dir))
+                            } else {
+                                None
+                            }
+                        }).collect()
+                    }
+                },
+                OppAction::Surface{sector} => {
+                    if self.feasible_ps.is_empty() {
+                        self.feasible_ps = map.water_cells_from_sector(*sector);
+                    } else if self.feasible_ps.len() != 1 {
+                        self.feasible_ps.retain(
+                            |pos| map.belongs_to_sector(pos, *sector)
+                        )
+                    }
+                },
+                OppAction::Torpedo{target} => {
+                    // TODO: account for "you can also damage yourself with a torpedo"
+                    //       note: torpedo affectation range includes diagonals
+                    if self.feasible_ps.is_empty() {
+                        self.feasible_ps = map.cells_within_distance(*target, 4)
+                    } else if self.feasible_ps.len() != 1 {
+                        self.feasible_ps.retain(
+                            |pos| map.are_within_distance(*pos, *target, 4)
+                        )
+                    }
+                },
+            }
+
+            eprintln!("{:?}", self.feasible_ps)
+        }
+    }
+}
+
+impl Action {
+    fn viable_moves(pos: Coord, map: &Map, visited: &Vec<Coord>) -> Vec<Action> {
+        let directions = ['N', 'E', 'S', 'W'];
+        let adjacents = pos.adjacents_clockwise();
+        let mut viable_moves = Vec::new();
+
+        for i in 0..=3 {
+            let pos_i = adjacents[i];
+            if map.is_water(pos_i) && !visited.contains(&pos_i) {
+                viable_moves.push(
+                    Action::Move{ dir: directions[i] }
+                );
+            }
+        }
+
+        viable_moves
     }
 }
