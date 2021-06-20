@@ -167,8 +167,6 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
 
         let opp_actions = OppAction::seq_from_str(&opponent_orders);
         opp.analyze_actions(&global.map, &opp_actions);
-
-        // TODO: analyze everything
     }
 
     me.pos = Coord{x, y};
@@ -285,6 +283,7 @@ impl OppAction {
     }
 
     #[allow(dead_code)]
+    // TODO: try adversarial output (whitespace, inCoNsISteNt cASE)
     fn string_from_seq(seq: Vec<Self>) -> String {
         seq.iter().map(|action| {
             format!("{:?}", action)
@@ -367,6 +366,7 @@ impl Map {
         } else if distance == 0 || a.min_distance(b) > distance {
             return false
         }
+        // TODO: should prioritize search in the direction/s of b
         for coord in a.neighbors() {
             if self.is_water(coord) && self.are_within_distance(coord, b, distance-1) {
                 return true
@@ -452,6 +452,8 @@ impl Coord {
         ]
     }
 
+    //TODO: fn neighbors_by_direction(&self, reference_point: &Coord) -> Vec<Coord> {}
+
     fn range(min_x: usize, max_x: usize, min_y: usize, max_y: usize) -> Vec<Coord> {
         let mut range = Vec::new();
         for y in min_y..=max_y {
@@ -530,6 +532,9 @@ impl Opponent {
             eprintln!("{:?}", self.feasible_ps)
         }
     }
+
+    // TODO: traceback moves when I init feasible_ps
+    //       with an action/move history and Coord.before_move()
 }
 
 impl Action {
