@@ -268,6 +268,7 @@ impl Map {
         Map { width, height, grid, water }
     }
 
+    // TODO: this should assume within_bounds and be internal, Map methods only
     fn cell_at(&self, coord: Coord) -> Option<&Cell> {
         if self.is_within_bounds(coord) {
             Some( &self.grid[coord.y][coord.x] )
@@ -281,6 +282,7 @@ impl Map {
             && coord.y < self.height
     }
 
+    // TODO: this should check within_bounds, every client has to check that too...
     fn is_water(&self, coord: Coord) -> bool {
         match self.cell_at(coord) {
             None => false,
@@ -416,21 +418,18 @@ impl Opponent {
             match action {
                 OppAction::Move{dir} => {
                     if !self.feasible_ps.is_empty() {
-                        self.feasible_ps.retain(
-                            |pos| map.is_viable_move(*pos, *dir)
-                        );
-
-                        for i in 0 .. self.feasible_ps.len() {
-                            self.feasible_ps[i] = self.feasible_ps[i]._move(*dir)
-                        }
+                        self.feasible_ps = self.feasible_ps.iter().filter_map(|pos| {
+                            if map.is_viable_move(*pos, *dir) {
+                                Some(pos.after_move(*dir))
+                            } else {
+                                None
+                            }
+                        }).collect()
                     }
                 },
                 OppAction::Surface{sector} => {
                     if self.feasible_ps.is_empty() {
-                        self.feasible_ps = map.cells_from_sector(*sector);
-                        self.feasible_ps.retain(
-                            |pos| map.is_water(*pos)
-                        );
+                        self.feasible_ps = map.water_cells_from_sector(*sector);
                     } else if self.feasible_ps.len() != 1 {
                         self.feasible_ps.retain(
                             |pos| map.belongs_to_sector(pos, *sector)
@@ -439,11 +438,12 @@ impl Opponent {
                 },
                 OppAction::Torpedo{target} => {
                     // TODO: account for "you can also damage yourself with a torpedo"
+                    //       note: torpedo affectation range includes diagonals
                     if self.feasible_ps.is_empty() {
-                        self.feasible_ps = map.cells_within_range(*target, 4)
+                        self.feasible_ps = map.cells_within_distance(*target, 4)
                     } else if self.feasible_ps.len() != 1 {
                         self.feasible_ps.retain(
-                            |pos| map.are_within_range(*pos, *target, 4)
+                            |pos| map.are_within_distance(*pos, *target, 4)
                         )
                     }
                 },
@@ -455,9 +455,13 @@ impl Opponent {
 }
 
 impl Map {
-    fn cells_from_sector(&self, sector_id: usize) -> Vec<Coord> {
+    fn water_cells_from_sector(&self, sector_id: usize) -> Vec<Coord> {
         let (min_x, min_y) = self.sector_addr(sector_id);
-        Coord::range(min_x, min_x + 4, min_y, min_y + 4)
+        let cells_from_sector = Coord::range(min_x, min_x + 4, min_y, min_y + 4);
+
+        cells_from_sector.into_iter().filter(
+            |coord| self.cell_at(*coord).unwrap().is_water()
+        ).collect()
     }
 
     fn sector_addr(&self, sector_id: usize) -> (usize, usize) {
@@ -476,41 +480,35 @@ impl Map {
     }
 
     fn is_viable_move(&self, pos: Coord, dir: char) -> bool {
-        let dest = pos._move(dir);
+        let dest = pos.after_move(dir);
         self.is_within_bounds(dest) && self.is_water(dest)
     }
 
     // invariant: a, b are coords to water cells
-    fn are_within_range(&self, a: Coord, b: Coord, range: usize) -> bool {
+    fn are_within_distance(&self, a: Coord, b: Coord, distance: usize) -> bool {
         if a == b {
             return true
-        } else if range == 0 || !a.le_distance(b, range) {
+        } else if distance == 0 || a.min_distance(b) > distance {
             return false
         }
-
-        // NICE: maybe keep track of visited?
-        //       - with an inner method (_are...) and a shared visited vector.
-        //       - not very critical with range=4 & Coord::le_distance()
-        for coord in &a.neighbors() {
-            if self.is_within_bounds(*coord) && self.is_water(*coord) {
-                if self.are_within_range(*coord, b, range-1) {
+        for coord in a.neighbors() {
+            if self.is_within_bounds(coord) && self.is_water(coord)
+                && self.are_within_distance(coord, b, distance-1) {
                     return true
                 }
-            }
         }
-
         false
     }
 
-    fn cells_within_range(&self, pos: Coord, range: usize) -> Vec<Coord> {
+    fn cells_within_distance(&self, pos: Coord, distance: usize) -> Vec<Coord> {
         let mut cells = Vec::with_capacity(
-            // max possible number of cells within this range of pos
-            (range+1).pow(2) + range.pow(2)
+            // max possible number of cells within this distance of pos
+            (distance+1).pow(2) + distance.pow(2)
         );
         cells.push(pos);
         // BFS
         let mut pre_iter_start = 0;
-        for _ in 1..=range {
+        for _ in 1..=distance {
             let mut new_neighbors = Vec::with_capacity(
                 // 4-1 neighbors/cell (one neighbor was stepped into in the previous step)
                 // +1 for the root case, which won't have any visited neighbors
@@ -547,29 +545,30 @@ impl Coord {
         range
     }
 
-    fn _move(&self, dir: char) -> Coord {
+    fn after_move(&self, dir: char) -> Coord {
         match dir {
             'N' => Coord { y: self.y - 1, ..*self },
             'E' => Coord { x: self.x + 1, ..*self },
             'S' => Coord { y: self.y + 1, ..*self },
             'W' => Coord { x: self.x - 1, ..*self },
-            _ => panic!("Coord::_move(): not a direction char?")
+            _ => panic!("Coord::after_move(): not a direction char?")
         }
     }
 
     fn neighbors(&self) -> Vec<Coord> {
         vec![
-            Coord{ x: self.x - 1, ..(*self) },
-            Coord{ x: self.x + 1, ..(*self) },
-            Coord{ y: self.y - 1, ..(*self) },
-            Coord{ y: self.y + 1, ..(*self) }
+            self.after_move('N'),
+            self.after_move('E'),
+            self.after_move('S'),
+            self.after_move('W')
         ]
     }
 
-    fn le_distance(&self, other: Coord, distance: usize) -> bool {
+    // min (possible) distance, doesn't account for cells being Water/Land
+    fn min_distance(&self, other: Coord) -> usize {
         let distance_x = (self.x as isize - other.x as isize).abs();
         let distance_y = (self.y as isize - other.y as isize).abs();
 
-        distance_x + distance_y <= distance as isize
+        (distance_x + distance_y) as usize
     }
 }
