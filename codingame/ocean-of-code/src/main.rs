@@ -14,7 +14,7 @@ fn main() {
     let mut opp = Opponent::new();
 
     // 1st turn: choose a starting position
-    println!("{}", initial_pos(&global));
+    println!("{}", global.initial_pos());
 
     timer.setup_stop();
 
@@ -29,11 +29,6 @@ fn main() {
 
         timer.stop(global.turn - 1);
     }
-}
-
-fn initial_pos(global: &Global) -> &Coord {
-    global.map.water.iter()
-        .choose(&mut rand::thread_rng()).unwrap()
 }
 
 #[allow(dead_code)]
@@ -524,6 +519,13 @@ impl Opponent {
 
     // TODO: traceback moves when I init feasible_ps
     //       with an action/move history and Coord.before_move()
+}
+
+impl Global {
+    fn initial_pos(&self) -> &Coord {
+        self.map.water.iter()
+            .choose(&mut rand::thread_rng()).unwrap()
+    }
 }
 
 impl Me {
