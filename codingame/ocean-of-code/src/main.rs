@@ -2,6 +2,7 @@ fn main() {
     let mut timer = Timer::new();
 
     let mut global = read_starting_info();
+    timer.get_turn_pointer(&global);
     let mut me = Me::new();
     let mut opp = Opponent::new();
 
@@ -21,7 +22,7 @@ fn main() {
 
         println!("{}", action_seq);
 
-        timer.stop(global.turn - 1);
+        timer.stop();
     }
 }
 
@@ -85,7 +86,8 @@ use std::time::{Duration, Instant};
 
 struct Timer {
     start: Instant,
-    turns_acc: Duration
+    turns_acc: Duration,
+    turn_ptr: *const usize
 }
 
 use std::io;
@@ -274,11 +276,14 @@ impl OppAction {
     }
 }
 
+use std::ptr;
+
 impl Timer {
     fn new() -> Timer {
         Timer {
             start: Instant::now(),
-            turns_acc: Duration::new(0,0)
+            turns_acc: Duration::new(0,0),
+            turn_ptr: ptr::null()
         }
     }
 
@@ -290,13 +295,19 @@ impl Timer {
         eprintln!("Response time: {} ms", self.start.elapsed().as_millis())
     }
 
-    fn stop(&mut self, turn: usize) {
+    fn stop(&mut self) {
         let elapsed = self.start.elapsed();
         self.turns_acc += elapsed;
-        let mean = self.turns_acc.div_f32(turn as f32);
+        let turn = unsafe { self.turn_ptr.as_ref().unwrap() };
+        let real_turn = (turn -1) as f32;
+        let mean = self.turns_acc.div_f32(real_turn);
 
         eprintln!("Response time: {} ms / Mean: {} ms",
             elapsed.as_millis(), mean.as_millis());
+    }
+
+    fn get_turn_pointer(&mut self, global: &Global) {
+        self.turn_ptr = &global.turn;
     }
 }
 
