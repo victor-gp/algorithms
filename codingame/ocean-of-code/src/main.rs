@@ -25,6 +25,8 @@ fn main() {
         read_turn_info(&global, &mut me, &mut opp);
 
         let action_seq = me.next_actions(&global, &opp);
+        me.register_actions(&action_seq);
+
         println!("{}", action_seq);
 
         timer.stop(global.turn - 1);
@@ -573,7 +575,7 @@ impl Global {
 }
 
 impl Me {
-    fn next_actions(&mut self, global: &Global, opp: &Opponent) -> ActionSeq {
+    fn next_actions(&self, global: &Global, opp: &Opponent) -> ActionSeq {
         let mut action_seq = ActionSeq::new();
         let viable_moves = self.viable_moves(&global.map);
         let have_to_surface = viable_moves.is_empty();
@@ -590,9 +592,6 @@ impl Me {
         if action_seq.is_empty() {
             action_seq.push(viable_moves[0])
         }
-
-        // NICE: move this into main, drop &mut here
-        self.register_actions(&action_seq);
 
         action_seq
     }
