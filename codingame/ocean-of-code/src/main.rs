@@ -519,11 +519,15 @@ impl Opponent {
         self.feasible_ps[0]
     }
 
+    fn is_position_tracked(&self) -> bool {
+        ! self.feasible_ps.is_empty()
+    }
+
     fn analyze_actions(&mut self, map: &Map, actions: &Vec<OppAction>) {
         for action in actions {
             match action {
                 OppAction::Move{dir} => {
-                    if !self.feasible_ps.is_empty() {
+                    if self.is_position_tracked() {
                         self.feasible_ps = self.feasible_ps.iter().filter_map(|pos| {
                             if map.is_viable_move(*pos, *dir) {
                                 Some(pos.after_move(*dir))
@@ -534,9 +538,9 @@ impl Opponent {
                     }
                 },
                 OppAction::Surface{sector} => {
-                    if self.feasible_ps.is_empty() {
+                    if ! self.is_position_tracked() {
                         self.feasible_ps = map.water_cells_from_sector(*sector);
-                    } else if self.feasible_ps.len() != 1 {
+                    } else if ! self.is_position_known() {
                         self.feasible_ps.retain(
                             |pos| map.belongs_to_sector(pos, *sector)
                         )
@@ -545,9 +549,9 @@ impl Opponent {
                 OppAction::Torpedo{target} => {
                     // TODO: account for "you can also damage yourself with a torpedo"
                     //       note: torpedo affectation range includes diagonals
-                    if self.feasible_ps.is_empty() {
+                    if ! self.is_position_tracked() {
                         self.feasible_ps = map.cells_within_distance(*target, 4)
-                    } else if self.feasible_ps.len() != 1 {
+                    } else if ! self.is_position_known() {
                         self.feasible_ps.retain(
                             |pos| map.are_within_distance(*pos, *target, 4)
                         )
