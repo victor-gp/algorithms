@@ -343,6 +343,29 @@ impl Map {
         }).collect::<Vec<Coord>>()
     }
 
+    // cond: a, b are coords to water cells
+    fn distance(&self, a: &Coord, b: &Coord) -> Option<usize> {
+        let mut visited = vec![vec![false; self.width]; self.height];
+        self._distance(a, b, &mut visited)
+    }
+
+    // invariant: a, b are coords to water cells
+    fn _distance(&self, a: &Coord, b: &Coord, visited: &mut Vec<Vec<bool>>) -> Option<usize> {
+        if a == b { return Some(0) }
+
+        for coord in a.neighbors_by_direction(b).iter()
+                      .filter(|&coord| self.is_water(*coord)) {
+            if visited[coord.y][coord.x] { continue }
+            visited[coord.y][coord.x] = true;
+
+            match self._distance(coord, b, visited) {
+                Some(distance) => return Some(distance +1),
+                None => continue
+            }
+        }
+        None
+    }
+
     // invariant: a, b are coords to water cells
     fn are_within_distance(&self, a: Coord, b: Coord, distance: usize) -> bool {
         if a == b {
@@ -350,8 +373,8 @@ impl Map {
         } else if distance == 0 || a.min_distance(b) > distance {
             return false
         }
-        // TODO: should prioritize search in the direction/s of b
-        for coord in a.neighbors() {
+
+        for coord in a.neighbors_by_direction(&b) {
             if self.is_water(coord) && self.are_within_distance(coord, b, distance-1) {
                 return true
             }
@@ -436,7 +459,17 @@ impl Coord {
         ]
     }
 
-    //TODO: fn neighbors_by_direction(&self, reference_point: &Coord) -> Vec<Coord> {}
+    fn neighbors_by_direction(&self, reference_point: &Coord) -> Vec<Coord> {
+        let mut neighbors = self.neighbors();
+        neighbors.sort_by(|a, b| {
+            let dist_a = a.min_distance(*reference_point);
+            let dist_b = b.min_distance(*reference_point);
+
+            dist_a.partial_cmp(&dist_b).unwrap()
+        });
+
+        neighbors
+    }
 
     fn range(min_x: usize, max_x: usize, min_y: usize, max_y: usize) -> Vec<Coord> {
         let mut range = Vec::new();
@@ -475,6 +508,15 @@ impl Opponent {
             lives: 0,
             feasible_ps: Vec::new(),
         }
+    }
+
+    fn is_position_known(&self) -> bool {
+        self.feasible_ps.len() == 1
+    }
+
+    // cond: position is known
+    fn position(&self) -> Coord {
+        self.feasible_ps[0]
     }
 
     fn analyze_actions(&mut self, map: &Map, actions: &Vec<OppAction>) {
@@ -534,6 +576,7 @@ impl Me {
         let viable_moves = self.viable_moves(&global.map);
         let have_to_surface = viable_moves.is_empty();
         let may_launch_torpedo = self.may_launch_torpedo(opp, &global.map);
+        eprintln!("may launch torpedo: {:?}", may_launch_torpedo);
 
         if have_to_surface {
             action_seq.push(Action::Surface)
@@ -566,10 +609,13 @@ impl Me {
     }
 
     fn may_launch_torpedo(&self, opp: &Opponent, map: &Map) -> bool {
-        false
-        /*torpedo_cooldown == 0
-            && opp.feasible_ps.len() == 1
-            && map.distance(self.pos, opp.pos) <= 6*/
+        self.torpedo_cooldown == 0
+            && opp.is_position_known()
+            && match map.distance(&self.pos, &opp.position()) {
+                // torpedo range (4) + impact area (1) + approaching move (1)
+                Some(distance) => distance <= 6,
+                None => false
+            }
     }
 
     fn register_actions(&mut self, actions: &Vec<Action>) {
