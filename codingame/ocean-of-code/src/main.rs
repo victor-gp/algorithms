@@ -1,11 +1,3 @@
-use std::io;
-
-macro_rules! parse_input {
-    ($x:expr, $t:ident) => ($x.trim().parse::<$t>().unwrap())
-}
-
-use rand::seq::IteratorRandom;
-
 fn main() {
     let mut timer = Timer::new();
 
@@ -94,6 +86,12 @@ use std::time::{Duration, Instant};
 struct Timer {
     start: Instant,
     turns_acc: Duration
+}
+
+use std::io;
+
+macro_rules! parse_input {
+    ($x:expr, $t:ident) => ($x.trim().parse::<$t>().unwrap())
 }
 
 fn read_starting_info() -> Global {
@@ -269,7 +267,6 @@ impl OppAction {
     }
 
     #[allow(dead_code)]
-    // TODO: try adversarial output (whitespace, inCoNsISteNt cASE)
     fn string_from_seq(seq: Vec<Self>) -> String {
         seq.iter().map(|action| {
             format!("{:?}", action)
@@ -567,6 +564,8 @@ impl Opponent {
     //       with an action/move history and Coord.before_move()
 }
 
+use rand::seq::IteratorRandom;
+
 impl Global {
     fn initial_pos(&self) -> &Coord {
         self.map.water.iter()
@@ -648,6 +647,7 @@ impl DerefMut for ActionSeq {
     }
 }
 
+// NICE: try adversarial output (whitespace, inCoNsISteNt cASE)
 impl fmt::Display for ActionSeq {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let seq_string = self.iter().map(|action| {
