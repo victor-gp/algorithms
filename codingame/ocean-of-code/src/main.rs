@@ -14,8 +14,7 @@ fn main() {
     let mut opp = Opponent::new();
 
     // 1st turn: choose a starting position
-    let first_pos = global.map.water_it().choose(&mut rand::thread_rng()).unwrap();
-    println!("{}", first_pos);
+    println!("{}", initial_pos(&global));
 
     timer.setup_stop();
 
@@ -30,6 +29,11 @@ fn main() {
 
         timer.stop(global.turn - 1);
     }
+}
+
+fn initial_pos(global: &Global) -> &Coord {
+    global.map.water.iter()
+        .choose(&mut rand::thread_rng()).unwrap()
 }
 
 fn next_action(global: &Global, me: &mut Me, opp: &Opponent) -> Action {
@@ -219,7 +223,7 @@ impl Cell {
         }
     }
 
-    fn is_water(&self) -> bool {
+    fn is_water_cell(&self) -> bool {
         matches!(self, Cell::Water)
     }
 }
@@ -268,9 +272,8 @@ impl OppAction {
                 let y = parse_input!(tokens.next()?, usize);
                 Some( Self::Torpedo{ target: Coord {x,y} } )
             },
-            // TODO "MSG" => None // no need for this? it's not on the opponent's API?
             _ => {
-                eprintln!("Action::from_str: could not parse string \"{}\"", s);
+                eprintln!("OppAction::from_str: could not parse string \"{}\"", s);
                 None
             }
         }
@@ -315,8 +318,6 @@ impl Timer {
     }
 }
 
-use std::slice::Iter;
-
 impl Map {
     fn new(width: usize, height: usize, grid: Vec<Vec<Cell>>) -> Map {
         let water = Map::water_positions(&grid);
@@ -324,26 +325,26 @@ impl Map {
         Map { width, height, grid, water }
     }
 
-    // TODO: this should assume within_bounds and be internal, Map methods only
-    fn cell_at(&self, coord: Coord) -> Option<&Cell> {
-        if self.is_within_bounds(coord) {
-            Some( &self.grid[coord.y][coord.x] )
-        } else {
-            None
-        }
+    // internal, Map methods only!
+    fn cell_at(&self, coord: Coord) -> &Cell {
+        &self.grid[coord.y][coord.x]
     }
 
     fn is_within_bounds(&self, coord: Coord) -> bool {
+        // no need for 0 <= coords cause usize overflows on -1
         coord.x < self.width
             && coord.y < self.height
     }
 
-    // TODO: this should check within_bounds, every client has to check that too...
+    // use this to skip the is_within_bounds() check
     fn is_water(&self, coord: Coord) -> bool {
-        match self.cell_at(coord) {
-            None => false,
-            Some(cell) => cell.is_water()
-        }
+        self.is_within_bounds(coord)
+            && self.cell_at(coord).is_water_cell()
+    }
+
+    fn is_viable_move(&self, pos: Coord, dir: char) -> bool {
+        let dest = pos.after_move(dir);
+        self.is_water(dest)
     }
 
     fn water_positions(grid: &Vec<Vec<Cell>>) -> Vec<Coord> {
@@ -359,15 +360,6 @@ impl Map {
         }).collect::<Vec<Coord>>()
     }
 
-    fn water_it(&self) -> Iter<Coord> {
-        self.water.iter()
-    }
-
-    fn is_viable_move(&self, pos: Coord, dir: char) -> bool {
-        let dest = pos.after_move(dir);
-        self.is_within_bounds(dest) && self.is_water(dest)
-    }
-
     // invariant: a, b are coords to water cells
     fn are_within_distance(&self, a: Coord, b: Coord, distance: usize) -> bool {
         if a == b {
@@ -376,14 +368,14 @@ impl Map {
             return false
         }
         for coord in a.neighbors() {
-            if self.is_within_bounds(coord) && self.is_water(coord)
-                && self.are_within_distance(coord, b, distance-1) {
-                    return true
-                }
+            if self.is_water(coord) && self.are_within_distance(coord, b, distance-1) {
+                return true
+            }
         }
         false
     }
 
+    // water cells_only, land cells are stepped around
     fn cells_within_distance(&self, pos: Coord, distance: usize) -> Vec<Coord> {
         let mut cells = Vec::with_capacity(
             // max possible number of cells within this distance of pos
@@ -400,8 +392,7 @@ impl Map {
             );
             for pos in &cells[pre_iter_start..] {
                 let neighbors = pos.neighbors().into_iter().filter(|coord| {
-                    self.is_within_bounds(*coord) && self.is_water(*coord)
-                        && ! cells[pre_iter_start..].contains(coord)
+                    self.is_water(*coord) && ! cells[pre_iter_start..].contains(coord)
                 });
                 for neighbor in neighbors {
                     if ! new_neighbors.contains(&neighbor) {
@@ -427,12 +418,12 @@ impl Map {
         let cells_from_sector = Coord::range(min_x, min_x + 4, min_y, min_y + 4);
 
         cells_from_sector.into_iter().filter(
-            |coord| self.cell_at(*coord).unwrap().is_water()
+            |coord| self.cell_at(*coord).is_water_cell()
         ).collect()
     }
 
+    // sectors numbered 1 to 9, 5x5 cells/sector, first horizontal then vertical
     fn sector_addr(&self, sector_id: usize) -> (usize, usize) {
-        // 5x5 cells/sector, sectors numbered 1..9 first horizontal then vertical
         let sector_addr = sector_id - 1;
         let min_y = (sector_addr / 3) * 5;
         let min_x = (sector_addr % 3) * 5;
