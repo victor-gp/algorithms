@@ -24,7 +24,7 @@ fn main() {
         global.turn += 1;
         read_turn_info(&global, &mut me, &mut opp);
 
-        let action = next_action(&global, &mut me, &opp);
+        let action = me.next_actions(&global, &opp);
         println!("{}", action);
 
         timer.stop(global.turn - 1);
@@ -34,17 +34,6 @@ fn main() {
 fn initial_pos(global: &Global) -> &Coord {
     global.map.water.iter()
         .choose(&mut rand::thread_rng()).unwrap()
-}
-
-fn next_action(global: &Global, me: &mut Me, opp: &Opponent) -> Action {
-    let viable_moves = Action::viable_moves(me.pos, &global.map, &me.visited);
-
-    if viable_moves.is_empty() {
-        me.visited = Vec::new();
-        Action::Surface
-    } else {
-        viable_moves[0]
-    }
 }
 
 #[allow(dead_code)]
@@ -73,7 +62,7 @@ struct Opponent {
     // cooldowns
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 enum Action {
     Move { dir: char },
     Surface,
@@ -537,19 +526,54 @@ impl Opponent {
     //       with an action/move history and Coord.before_move()
 }
 
-impl Action {
-    fn viable_moves(pos: Coord, map: &Map, visited: &Vec<Coord>) -> Vec<Action> {
+impl Me {
+    fn next_actions(&mut self, global: &Global, opp: &Opponent) -> Action {
+        let mut action_seq: Vec<Action> = Vec::new();
+        let viable_moves = self.viable_moves(&global.map);
+        let have_to_surface = viable_moves.is_empty();
+        let may_launch_torpedo = self.may_launch_torpedo(opp, &global.map);
+
+        if have_to_surface {
+            action_seq.push(Action::Surface)
+        }
+        if may_launch_torpedo {
+            // combinations(viable_moves, torpedo) -> Vec<ActionSeq>
+            // score them (parameters: my_lives, their_lives, my_pos)
+        }
+        if action_seq.is_empty() {
+            action_seq.push(viable_moves[0])
+        }
+
+        // NICE: move this into main, drop &mut here
+        self.register_actions(&action_seq);
+
+        action_seq[0]
+    }
+
+    fn viable_moves(&self, map: &Map) -> Vec<Action> {
         let directions = ['N', 'E', 'S', 'W'];
-        let destinations = directions.iter().map(|dir| pos.after_move(*dir));
+        let destinations = directions.iter().map(|&dir| self.pos.after_move(dir));
 
         directions.iter().zip(destinations).filter_map(|dir_dest| {
             let (&dir, dest) = dir_dest;
-            if map.is_water(dest) && ! visited.contains(&dest){
+            if map.is_water(dest) && ! self.visited.contains(&dest) {
                 Some(Action::Move{dir})
             }
-            else {
-                None
-            }
+            else { None }
         }).collect()
+    }
+
+    fn may_launch_torpedo(&self, opp: &Opponent, map: &Map) -> bool {
+        false
+        /*torpedo_cooldown == 0
+            && opp.feasible_ps.len() == 1
+            && map.distance(self.pos, opp.pos) <= 6*/
+    }
+
+    fn register_actions(&mut self, actions: &Vec<Action>) {
+        if actions.contains(&Action::Surface) {
+            self.visited.clear()
+        }
+        // torpedo charge is included in turn info
     }
 }
