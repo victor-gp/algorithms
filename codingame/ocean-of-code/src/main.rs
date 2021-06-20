@@ -24,8 +24,8 @@ fn main() {
         global.turn += 1;
         read_turn_info(&global, &mut me, &mut opp);
 
-        let action = me.next_actions(&global, &opp);
-        println!("{}", action);
+        let action_seq = me.next_actions(&global, &opp);
+        println!("{}", action_seq);
 
         timer.stop(global.turn - 1);
     }
@@ -573,8 +573,8 @@ impl Global {
 }
 
 impl Me {
-    fn next_actions(&mut self, global: &Global, opp: &Opponent) -> Action {
-        let mut action_seq: Vec<Action> = Vec::new();
+    fn next_actions(&mut self, global: &Global, opp: &Opponent) -> ActionSeq {
+        let mut action_seq = ActionSeq::new();
         let viable_moves = self.viable_moves(&global.map);
         let have_to_surface = viable_moves.is_empty();
         let may_launch_torpedo = self.may_launch_torpedo(&opp, &global.map);
@@ -594,7 +594,7 @@ impl Me {
         // NICE: move this into main, drop &mut here
         self.register_actions(&action_seq);
 
-        action_seq[0]
+        action_seq
     }
 
     fn viable_moves(&self, map: &Map) -> Vec<Action> {
@@ -621,10 +621,52 @@ impl Me {
             }
     }
 
-    fn register_actions(&mut self, actions: &Vec<Action>) {
+    fn register_actions(&mut self, actions: &ActionSeq) {
         if actions.contains(&Action::Surface) {
             self.visited.clear()
         }
         // torpedo charge is included in turn info
+    }
+}
+
+struct ActionSeq(Vec<Action>);
+// NICE: make this a generic type to contain both actions types (mainly for IO purposes)
+//       with an IOAction trait (Display, Debug, from_str) implemented by the two types
+
+use std::ops::{Deref, DerefMut};
+
+impl Deref for ActionSeq {
+    type Target = Vec<Action>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for ActionSeq {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl fmt::Display for ActionSeq {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let seq_string = self.iter().map(|action| {
+            format!("{}", action)
+        }).collect::< Vec<String> >().join("|");
+
+        write!(f, "{}", seq_string)
+    }
+}
+
+impl fmt::Debug for ActionSeq {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+impl ActionSeq {
+    fn new() -> Self {
+        ActionSeq(Vec::new())
     }
 }
