@@ -431,21 +431,24 @@ impl Opponent {
                         self.feasible_ps.retain(
                             |pos| map.is_water(*pos)
                         );
-                    } else {
+                    } else if self.feasible_ps.len() != 1 {
                         self.feasible_ps.retain(
                             |pos| map.belongs_to_sector(pos, *sector)
                         )
                     }
                 },
                 OppAction::Torpedo{target} => {
+                    // TODO: account for "you can also damage yourself with a torpedo"
                     if self.feasible_ps.is_empty() {
-                    } else {
+                        self.feasible_ps = map.cells_within_range(*target, 4)
+                    } else if self.feasible_ps.len() != 1 {
                         self.feasible_ps.retain(
-                            |pos| map.are_within_distance(*pos, *target, 4)
+                            |pos| map.are_within_range(*pos, *target, 4)
                         )
                     }
                 },
             }
+
             eprintln!("{:?}", self.feasible_ps)
         }
     }
@@ -478,19 +481,19 @@ impl Map {
     }
 
     // invariant: a, b are coords to water cells
-    fn are_within_distance(&self, a: Coord, b: Coord, dist: usize) -> bool {
+    fn are_within_range(&self, a: Coord, b: Coord, range: usize) -> bool {
         if a == b {
             return true
-        } else if dist == 0 || !a.le_distance(b, dist) {
+        } else if range == 0 || !a.le_distance(b, range) {
             return false
         }
 
         // NICE: maybe keep track of visited?
         //       - with an inner method (_are...) and a shared visited vector.
-        //       - not very critical with dist=4 & Coord::le_distance()
+        //       - not very critical with range=4 & Coord::le_distance()
         for coord in &a.neighbors() {
             if self.is_within_bounds(*coord) && self.is_water(*coord) {
-                if self.are_within_distance(*coord, b, dist-1) {
+                if self.are_within_range(*coord, b, range-1) {
                     return true
                 }
             }
@@ -500,33 +503,35 @@ impl Map {
     }
 
     fn cells_within_range(&self, pos: Coord, range: usize) -> Vec<Coord> {
-        let max_possible = (range+1).pow(2) + range.pow(2);
-        let mut coords = Vec::with_capacity(max_possible);
-        coords.push(pos);
-        let (mut pre_iter_start, mut iter_start) = (0, 1);
-
-        // (Failed) Rustacean BFS
+        let mut cells = Vec::with_capacity(
+            // max possible number of cells within this range of pos
+            (range+1).pow(2) + range.pow(2)
+        );
+        cells.push(pos);
+        // BFS
+        let mut pre_iter_start = 0;
         for _ in 1..=range {
-            let mut tmp_vec: Vec<Coord> = Vec::new();
-            for pos in &coords[pre_iter_start..iter_start] {
-                let unchecked_coords = pos.neighbors();
-                let neighbors_it = unchecked_coords.into_iter().filter(|coord| {
+            let mut new_neighbors = Vec::with_capacity(
+                // 4-1 neighbors/cell (one neighbor was stepped into in the previous step)
+                // +1 for the root case, which won't have any visited neighbors
+                3* cells[pre_iter_start..].len() + 1
+            );
+            for pos in &cells[pre_iter_start..] {
+                let neighbors = pos.neighbors().into_iter().filter(|coord| {
                     self.is_within_bounds(*coord) && self.is_water(*coord)
+                        && ! cells[pre_iter_start..].contains(coord)
                 });
-                let new_neighbors = neighbors_it.filter(
-                    |neighbor| ! coords[pre_iter_start..].contains(neighbor)
-                );
-
-                tmp_vec.extend(new_neighbors);
-                // &coords[iter_start..].copy_from_slice(&mut tmp_vec[..]);
-                // doesn't let me borrow here...
+                for neighbor in neighbors {
+                    if ! new_neighbors.contains(&neighbor) {
+                            new_neighbors.push(neighbor)
+                    }
+                }
             }
-            coords.append(&mut tmp_vec);
-            pre_iter_start = iter_start;
-            iter_start = coords.len();
+            pre_iter_start = cells.len();
+            cells.append(&mut new_neighbors);
         }
 
-        coords
+        cells
     }
 }
 
