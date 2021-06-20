@@ -470,15 +470,6 @@ impl Coord {
 
         (distance_x + distance_y) as usize
     }
-
-    fn adjacents_clockwise(&self) -> [Coord; 4] {
-        [
-            Coord { y: self.y - 1, ..*self },
-            Coord { x: self.x + 1, ..*self },
-            Coord { y: self.y + 1, ..*self },
-            Coord { x: self.x - 1, ..*self }
-        ]
-    }
 }
 
 impl Me {
@@ -544,18 +535,16 @@ impl Opponent {
 impl Action {
     fn viable_moves(pos: Coord, map: &Map, visited: &Vec<Coord>) -> Vec<Action> {
         let directions = ['N', 'E', 'S', 'W'];
-        let adjacents = pos.adjacents_clockwise();
-        let mut viable_moves = Vec::new();
+        let destinations = directions.iter().map(|dir| pos.after_move(*dir));
 
-        for i in 0..=3 {
-            let pos_i = adjacents[i];
-            if map.is_water(pos_i) && !visited.contains(&pos_i) {
-                viable_moves.push(
-                    Action::Move{ dir: directions[i] }
-                );
+        directions.iter().zip(destinations).filter_map(|dir_dest| {
+            let (&dir, dest) = dir_dest;
+            if map.is_water(dest) && ! visited.contains(&dest){
+                Some(Action::Move{dir})
             }
-        }
-
-        viable_moves
+            else {
+                None
+            }
+        }).collect()
     }
 }
