@@ -353,6 +353,7 @@ impl Map {
         }).collect::<Vec<Coord>>()
     }
 
+    // TODO: precalculate all distances at Map::new() time
     // cond: a, b are coords to water cells
     fn distance(&self, a: &Coord, b: &Coord) -> Option<usize> {
         let mut visited = vec![vec![false; self.width]; self.height];
@@ -589,17 +590,25 @@ impl Me {
         let mut action_seq = ActionSeq::new();
         let viable_moves = self.viable_moves(&global.map);
         let have_to_surface = viable_moves.is_empty();
-        let may_launch_torpedo = self.may_launch_torpedo(&opp, &global.map);
-        eprintln!("may launch torpedo: {:?}", may_launch_torpedo);
+        let should_fire = self.should_fire(&opp, &global.map);
 
         if have_to_surface {
             action_seq.push(Action::Surface)
         }
-        if may_launch_torpedo {
-            // combinations(viable_moves, torpedo) -> Vec<ActionSeq>
-            // score them (parameters: my_lives, their_lives, my_pos)
+        /*if may_fire {
+            let possible_torpedoes = Action.torpedoes_impacting(&opp.position());
+            let combinations = ActionSeq.viable_combinations(&viable_moves, &possible_torpedoes, &self, &global.map);
+            let scores = combinations.iter().map(|&c| c.score());
+            // score params: my_lives, their_lives, my_pos
+
+            let (index, max_score) = scores.enumerate().max_by(|&(_, score)| score);
+            action_seq.push(combinations[index])
+
+        }*/
+        if should_fire {
+            action_seq.push(Action::Torpedo{ target: opp.position() })
         }
-        if action_seq.is_empty() {
+        if !have_to_surface {
             action_seq.push(viable_moves[0])
         }
 
@@ -619,7 +628,7 @@ impl Me {
         }).collect()
     }
 
-    fn may_launch_torpedo(&self, opp: &Opponent, map: &Map) -> bool {
+    fn may_fire(&self, opp: &Opponent, map: &Map) -> bool {
         self.torpedo_cooldown == 0
             && opp.is_position_known()
             && match map.distance(&self.pos, &opp.position()) {
@@ -636,10 +645,21 @@ impl Me {
         }
         // torpedo charge is included in turn info
     }
+
+    fn should_fire(&self, opp: &Opponent, map: &Map) -> bool {
+        self.torpedo_cooldown == 0
+            && opp.is_position_known()
+            && match map.distance(&self.pos, &opp.position()) {
+                // torpedo impact area = target + 1 including diagonals
+                // torpedo range = 4
+                Some(distance) => 2 <= distance && distance <= 4,
+                None => false
+            }
+    }
 }
 
 struct ActionSeq(Vec<Action>);
-// NICE: make this a generic type to contain both actions types (mainly for IO purposes)
+// NICE: make this a generic type to contain both action types (mainly for IO purposes)
 //       with an IOAction trait (Display, Debug, from_str) implemented by the two types
 
 use std::ops::{Deref, DerefMut};
