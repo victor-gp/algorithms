@@ -568,41 +568,46 @@ impl Opponent {
     fn analyze_actions(&mut self, map: &Map, actions: &Vec<OppAction>) {
         for action in actions {
             match action {
-                OppAction::Move{dir} => {
-                    if self.is_position_tracked() {
-                        self.feasible_ps = self.feasible_ps.iter().filter_map(|pos| {
-                            if map.is_viable_move(*pos, *dir) {
-                                Some(pos.after_move(*dir))
-                            } else { None }
-                        }).collect()
-                    }
-                },
-                OppAction::Surface{sector} => {
-                    if ! self.is_position_tracked() {
-                        self.feasible_ps = map.water_cells_from_sector(*sector);
-                    } else if ! self.is_position_known() {
-                        self.feasible_ps.retain(
-                            |pos| map.belongs_to_sector(pos, *sector)
-                        )
-                    }
-                },
-                OppAction::Torpedo{target} => {
-                    // NICE: account for "you can also damage yourself with a torpedo"
-                    //       note: torpedo affectation range includes diagonals
-                    if ! self.is_position_tracked() {
-                        self.feasible_ps = map.cells_within_distance(*target, 4)
-                    } else if ! self.is_position_known() {
-                        self.feasible_ps.retain(
-                            |pos| map.are_within_distance(*pos, *target, 4)
-                        )
-                    }
-                }
-                OppAction::Sonar{sector: _} => {},
+                OppAction::Move{dir} => self.analyze_move(*dir, map),
+                OppAction::Surface{sector} => self.analyze_surface(*sector, map),
+                OppAction::Torpedo{target} => self.analyze_torpedo(target, map),
+                OppAction::Sonar{sector: _} => (),
                 OppAction::Silence => self.analyze_silence(map)
             }
-
             eprintln!("{:?}", self.feasible_ps)
         }
+    }
+
+    fn analyze_move(&mut self, dir: char, map: &Map) {
+        if self.is_position_tracked() {
+            self.feasible_ps = self.feasible_ps.iter().filter_map(|pos| {
+                if map.is_viable_move(*pos, dir) {
+                    Some(pos.after_move(dir))
+                } else { None }
+            }).collect()
+        }
+    }
+
+    fn analyze_surface(&mut self, sector: usize, map: &Map) {
+        if ! self.is_position_tracked() {
+            self.feasible_ps = map.water_cells_from_sector(sector);
+        } else if ! self.is_position_known() {
+            self.feasible_ps.retain(
+                |pos| map.belongs_to_sector(pos, sector)
+            )
+        }
+    }
+
+    fn analyze_torpedo(&mut self, target: &Coord, map: &Map) {
+        if ! self.is_position_tracked() {
+            self.feasible_ps = map.cells_within_distance(*target, 4)
+        } else if ! self.is_position_known() {
+            self.feasible_ps.retain(
+                |pos| map.are_within_distance(*pos, *target, 4)
+            )
+        }
+        // NICE: account for "you can also damage yourself with a torpedo"
+        //       note: torpedo affectation range includes diagonals
     }
 
     fn analyze_silence(&mut self, map: &Map) {
