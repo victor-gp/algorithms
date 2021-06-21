@@ -54,12 +54,15 @@ struct Opponent {
 
 #[derive(Copy, Clone, PartialEq)]
 enum Action {
-    Move { dir: char },
+    Move { dir: char, charge_device: &'static str },
     Surface,
     Torpedo { target: Coord },
     // TODO: SONAR, SILENCE
     // Msg { message: &'static str },
 }
+
+const TORPEDO: &str = "TORPEDO";
+const SONAR: &str = "SONAR";
 
 enum OppAction {
     Move { dir: char },
@@ -223,7 +226,7 @@ impl Cell {
 impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Action::Move{dir} => write!(f, "MOVE {} TORPEDO", dir),
+            Action::Move{dir, charge_device} => write!(f, "MOVE {} {}", dir, charge_device),
             Action::Surface => write!(f, "SURFACE"),
             Action::Torpedo{target} => write!(f, "TORPEDO {}", target),
         }
@@ -678,7 +681,11 @@ impl Me {
             action_seq.push(Action::Torpedo{ target: opp.position() })
         }
         if !have_to_surface {
-            action_seq.push(viable_moves[0])
+            // TODO: better pathing, including Silence
+            let device = self.device_to_charge();
+            action_seq.push(
+                viable_moves[0].but_charge(SONAR)
+            )
         }
 
         action_seq
@@ -691,7 +698,7 @@ impl Me {
         directions.iter().zip(destinations).filter_map(|dir_dest| {
             let (&dir, dest) = dir_dest;
             if map.is_water(dest) && ! self.visited.contains(&dest) {
-                Some(Action::Move{dir})
+                Some(Action::new_move(dir))
             }
             else { None }
         }).collect()
@@ -724,6 +731,12 @@ impl Me {
                 Some(distance) => 2 <= distance && distance <= 4,
                 None => false
             }
+    }
+
+    fn device_to_charge(&self) -> &'static str {
+        // NICE: take into account the CDs after the incoming action_seq
+
+        SONAR
     }
 }
 
@@ -767,5 +780,20 @@ impl fmt::Debug for ActionSeq {
 impl ActionSeq {
     fn new() -> Self {
         ActionSeq(Vec::new())
+    }
+}
+
+impl Action {
+    fn new_move(dir: char) -> Action {
+        Action::Move { dir , charge_device: TORPEDO }
+    }
+
+    fn but_charge(&self, device: &'static str) -> Action {
+        if let Action::Move{ dir, charge_device: _} = self {
+            Action::Move { dir: *dir, charge_device: device }
+        }
+        else {
+            panic!("used Action::but_charge on \"{}\", should be a Move", self)
+        }
     }
 }
