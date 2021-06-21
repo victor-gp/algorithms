@@ -156,6 +156,9 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
     if global.turn > 2 {
         me.visited.push(me.pos);
 
+        if sonar_result != "NA" {
+            opp.analyze_my_sonar(&sonar_result, /* me.last_sonar_sector() */ 1, &global.map)
+        }
         let opp_actions = OppAction::seq_from_str(&opponent_orders);
         opp.analyze_actions(&global.map, &opp_actions);
     }
@@ -624,6 +627,18 @@ impl Opponent {
         // rather than opp.visited (only works when position_is_known),
         //  I should just spam traceback (until latest Surface, returns bool if feasible),
         //  and visited would be just another internal parameter of traceback
+    }
+
+    fn analyze_my_sonar(&mut self, result: &str, sector: usize, map: &Map) {
+        if result == "Y" {
+            self.analyze_surface(sector, map)
+        } else if self.is_position_tracked() && ! self.is_position_known() {
+            self.feasible_ps.retain(
+                |pos| ! map.belongs_to_sector(pos, sector)
+            )
+        }
+        // I should keep this in Opp's history though, before the turn's action_seq.
+        // I may change OppAction to OppEvent, and include MySonar there
     }
 
     // TODO: traceback moves when I init feasible_ps
