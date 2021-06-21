@@ -57,6 +57,7 @@ enum Action {
     Move { dir: char },
     Surface,
     Torpedo { target: Coord },
+    // TODO: SONAR, SILENCE
     // Msg { message: &'static str },
 }
 
@@ -64,6 +65,8 @@ enum OppAction {
     Move { dir: char },
     Surface { sector: usize },
     Torpedo { target: Coord },
+    Sonar { sector: usize },
+    Silence,
 }
 
 struct Map {
@@ -73,12 +76,14 @@ struct Map {
     water: Vec<Coord>,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 // agnostic of Map, doesnt't care about bounds or Water/Land
 struct Coord {
     x: usize,
     y: usize
 }
+
+const DIRECTIONS: [char; 4] = ['N', 'E', 'S', 'W'];
 
 enum Cell { Water, Land }
 
@@ -234,6 +239,8 @@ impl fmt::Debug for OppAction {
             Self::Move{dir} => write!(f, "MOVE {}", dir),
             Self::Surface{sector} => write!(f, "SURFACE {}", sector),
             Self::Torpedo{target} => write!(f, "TORPEDO {}", target),
+            Self::Sonar{sector} => write!(f, "SONAR {}", sector),
+            Self::Silence => write!(f, "SILENCE"),
         }
     }
 }
@@ -256,6 +263,11 @@ impl OppAction {
                 let y = parse_input!(tokens.next()?, usize);
                 Some( Self::Torpedo{ target: Coord {x,y} } )
             },
+            "SONAR" => {
+                let sector = parse_input!(tokens.next()?, usize);
+                Some( Self::Sonar{ sector: sector } )
+            },
+            "SILENCE" => Some( Self::Silence ),
             _ => {
                 eprintln!("OppAction::from_str: could not parse string \"{}\"", s);
                 None
@@ -330,6 +342,7 @@ impl Map {
     }
 
     // use this to skip the is_within_bounds() check
+    // TODO: borrow coord, don't copy
     fn is_water(&self, coord: Coord) -> bool {
         self.is_within_bounds(coord)
             && self.cell_at(coord).is_water_cell()
@@ -425,6 +438,21 @@ impl Map {
         cells
     }
 
+    // invariant: pos refers to a Water cell
+    // return: n cells towards dir, or until leaving water, in order
+    fn cells_along(&self, pos: &Coord, dir: char, n: usize) -> Vec<Coord> {
+        if n == 0 { return Vec::new() }
+
+        let next = pos.after_move(dir);
+        if self.is_water(next) {
+            let mut ret = self.cells_along(&next, dir, n-1);
+            ret.insert(0, next);
+            ret
+        } else {
+            Vec::new()
+        }
+    }
+
     fn belongs_to_sector(&self, pos: &Coord, sector_id: usize) -> bool {
         let (min_x, min_y) = self.sector_addr(sector_id);
         min_x <= pos.x && pos.x <= min_x + 4
@@ -461,6 +489,7 @@ impl Coord {
         }
     }
 
+    // TODO: use DIRECTIONS
     fn neighbors(&self) -> Vec<Coord> {
         vec![
             self.after_move('N'),
@@ -513,6 +542,8 @@ impl Me {
     }
 }
 
+use std::iter;
+
 impl Opponent {
     fn new() -> Opponent {
         Opponent {
@@ -556,7 +587,7 @@ impl Opponent {
                     }
                 },
                 OppAction::Torpedo{target} => {
-                    // TODO: account for "you can also damage yourself with a torpedo"
+                    // NICE: account for "you can also damage yourself with a torpedo"
                     //       note: torpedo affectation range includes diagonals
                     if ! self.is_position_tracked() {
                         self.feasible_ps = map.cells_within_distance(*target, 4)
@@ -565,11 +596,29 @@ impl Opponent {
                             |pos| map.are_within_distance(*pos, *target, 4)
                         )
                     }
-                },
+                }
+                OppAction::Sonar{sector: _} => {},
+                OppAction::Silence => self.analyze_silence(map)
             }
 
             eprintln!("{:?}", self.feasible_ps)
         }
+    }
+
+    fn analyze_silence(&mut self, map: &Map) {
+        let max_sonar_dist = 4;
+        self.feasible_ps = self.feasible_ps.iter().flat_map(|&pos| {
+            DIRECTIONS.iter().flat_map(move |&dir|
+                map.cells_along(&pos, dir, max_sonar_dist)
+                //NICE: I could use opp.visited here, to drop paths through visited cells
+            ).chain(iter::once(pos))
+        }).collect();
+        self.feasible_ps.sort_unstable();
+        self.feasible_ps.dedup();
+
+        // rather than opp.visited (only works when position_is_known),
+        //  I should just spam traceback (until latest Surface, returns bool if feasible),
+        //  and visited would be just another internal parameter of traceback
     }
 
     // TODO: traceback moves when I init feasible_ps
