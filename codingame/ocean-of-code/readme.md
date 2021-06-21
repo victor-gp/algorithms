@@ -47,6 +47,14 @@ A torpedo requires 3 charge actions to be ready. When fully charged, the torpedo
 
 ![torpedo-range](https://raw.githubusercontent.com/CodinGameCommunity/ocean-of-code/master/torpedoRange.png)
 
+#### Sonar
+
+Sonar requires 4 charge actions to load. It allows you to check, if the opponent's submarine is in a given sector. You will get the response in your next turn. This is in respect to the time of issuing the command, not after the opponent moved.
+
+#### Silence
+
+Silence requires 6 charge actions to load. This allows you to move 0 to 4 cells in a given direction (not visiting already visited cells or islands). Your opponent will not know in which direction or how far you've moved.
+
 The following table shows, how different actions will be shown to your opponent:
 
 | Your action      | Shown to opponent | comment                                                                                                                        |
@@ -54,6 +62,8 @@ The following table shows, how different actions will be shown to your opponent:
 | `MOVE N TORPEDO` | `MOVE N`          | The opponent will see the movement direction (in this case: north), but not which power is charged                             |
 | `SURFACE`        | `SURFACE 3`       | The opponent will see, that you surfaced in sector 3                                                                           |
 | `TORPEDO 3 5`    | `TORPEDO 3 5`     | The opponent will see, that you fired a torpedo at the cell (3,5)                                                              |
+| `SONAR 4`        | `SONAR 4`         | The opponent will see, that you used a sonar on sector 4. You will receive the sonar result (Y/N for yes/no) in the next turn. |
+| `SILENCE N 4`    | `SILENCE`         | The opponent will see, that you moved silently - but not where or how far                                                      |
 
 ### Victory Conditions
 
@@ -117,6 +127,8 @@ e.g.: `MOVE N TORPEDO | TORPEDO 3 5` These commands move your submarine to the n
 - `MOVE direction POWER`
 - `SURFACE`
 - `TORPEDO X Y`
+- `SONAR sector`
+- `SILENCE direction distance`
 - `MSG message`
 
 ### Constraints
