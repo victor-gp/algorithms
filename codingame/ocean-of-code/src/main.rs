@@ -4,7 +4,7 @@ fn main() {
     let mut global = read_starting_info();
     timer.get_turn_pointer(&global);
     let mut me = Me::new();
-    let mut opp = Opponent::new();
+    let mut them = Them::new();
 
     // 1st turn: choose a starting position
     println!("{}", global.initial_pos());
@@ -15,9 +15,9 @@ fn main() {
         timer.start();
 
         global.turn += 1;
-        read_turn_info(&global, &mut me, &mut opp);
+        read_turn_info(&global, &mut me, &mut them);
 
-        let action_seq = me.next_actions(&global, &opp);
+        let action_seq = me.next_actions(&global, &them);
         me.register_actions(&action_seq);
 
         println!("{}", action_seq);
@@ -44,10 +44,9 @@ struct Me {
     // mine_cooldown: usize,
 }
 
-struct Opponent {
+struct Them {
     lives: usize,
     feasible_ps: Vec<Coord>,
-    // visited: Vec<Coord>,
     // move_history: Vec<Move>,
     // cooldowns
 }
@@ -65,7 +64,7 @@ enum Action {
 const TORPEDO: &str = "TORPEDO";
 const SONAR: &str = "SONAR";
 
-enum OppAction {
+enum TheirAction {
     Move { dir: char },
     Surface { sector: usize },
     Torpedo { target: Coord },
@@ -137,7 +136,7 @@ fn read_starting_info() -> Global {
 }
 
 #[allow(unused_variables)]
-fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
+fn read_turn_info(global: &Global, me: &mut Me, them: &mut Them) {
     let mut input_line = String::new();
     io::stdin().read_line(&mut input_line).unwrap();
     let inputs = input_line.split(" ").collect::<Vec<_>>();
@@ -161,15 +160,15 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
 
         if sonar_result != "NA" {
             // FIXME: wtf, I forgot this!
-            opp.analyze_my_sonar(&sonar_result, /* me.last_sonar_sector() */ 1, &global.map)
+            them.analyze_my_sonar(&sonar_result, /* me.last_sonar_sector() */ 1, &global.map)
         }
-        let opp_actions = OppAction::seq_from_str(&opponent_orders);
-        opp.analyze_actions(&global.map, &opp_actions);
+        let their_actions = TheirAction::seq_from_str(&opponent_orders);
+        them.analyze_actions(&global.map, &their_actions);
     }
 
     me.pos = Coord{x, y};
     me.lives = my_life;
-    opp.lives = opp_life;
+    them.lives = opp_life;
 
     me.torpedo_cooldown = torpedo_cooldown;
     me.sonar_cooldown = sonar_cooldown;
@@ -242,7 +241,7 @@ impl fmt::Debug for Action {
     }
 }
 
-impl fmt::Debug for OppAction {
+impl fmt::Debug for TheirAction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Move{dir} => write!(f, "MOVE {}", dir),
@@ -287,7 +286,7 @@ impl fmt::Debug for ActionSeq {
     }
 }
 
-impl OppAction {
+impl TheirAction {
     fn from_str(s: &str) -> Option<Self> {
         let mut tokens = s.split_whitespace();
         let token = tokens.next()?;
@@ -311,7 +310,7 @@ impl OppAction {
             },
             "SILENCE" => Some( Self::Silence ),
             _ => {
-                eprintln!("OppAction::from_str: could not parse string \"{}\"", s);
+                eprintln!("TheirAction::from_str: could not parse string \"{}\"", s);
                 None
             }
         }
@@ -646,10 +645,10 @@ impl Me {
         // Move.device_charge is ack'd in the turn info (cooldowns)
     }
 
-    fn should_fire(&self, opp: &Opponent, map: &Map) -> bool {
+    fn should_fire(&self, them: &Them, map: &Map) -> bool {
         self.torpedo_cooldown == 0
-            && opp.is_position_known()
-            && match map.distance(&self.pos, &opp.position()) {
+            && them.is_position_known()
+            && match map.distance(&self.pos, &them.position()) {
                 // torpedo impact area = target + 1 including diagonals
                 // torpedo range = 4
                 Some(distance) => 2 <= distance && distance <= 4,
@@ -657,7 +656,7 @@ impl Me {
             }
     }
 
-    fn device_to_charge(&self, opp: &Opponent) -> &'static str {
+    fn device_to_charge(&self, them: &Them) -> &'static str {
         let sonar_discharged = self.sonar_cooldown > 0;
         let torpedo_discharged = self.torpedo_cooldown > 0;
         // NICE: consider the CD amount
@@ -669,7 +668,7 @@ impl Me {
         else if ! torpedo_discharged {
             SONAR
         }
-        else if opp.is_position_narrow() { // NICE: && are we close enough?
+        else if them.is_position_narrow() { // NICE: && are we close enough?
             TORPEDO
         }
         else {
@@ -677,9 +676,9 @@ impl Me {
         }
     }
 
-    fn should_sonar(&self, opp: &Opponent) -> bool {
+    fn should_sonar(&self, them: &Them) -> bool {
         if self.sonar_cooldown > 0 { return false }
-        let sonar_score = opp.sonar_potential();
+        let sonar_score = them.sonar_potential();
 
         sonar_score > 0.5
     }
@@ -688,9 +687,9 @@ impl Me {
 use std::iter;
 use std::collections::HashMap;
 
-impl Opponent {
-    fn new() -> Opponent {
-        Opponent {
+impl Them {
+    fn new() -> Them {
+        Them {
             lives: 0,
             feasible_ps: Vec::new(),
         }
@@ -715,14 +714,14 @@ impl Opponent {
             && self.feasible_ps.len() <= 5
     }
 
-    fn analyze_actions(&mut self, map: &Map, actions: &Vec<OppAction>) {
+    fn analyze_actions(&mut self, map: &Map, actions: &Vec<TheirAction>) {
         for action in actions {
             match action {
-                OppAction::Move{dir} => self.analyze_move(*dir, map),
-                OppAction::Surface{sector} => self.analyze_surface(*sector, map),
-                OppAction::Torpedo{target} => self.analyze_torpedo(target, map),
-                OppAction::Sonar{sector: _} => (),
-                OppAction::Silence => self.analyze_silence(map)
+                TheirAction::Move{dir} => self.analyze_move(*dir, map),
+                TheirAction::Surface{sector} => self.analyze_surface(*sector, map),
+                TheirAction::Torpedo{target} => self.analyze_torpedo(target, map),
+                TheirAction::Sonar{sector: _} => (),
+                TheirAction::Silence => self.analyze_silence(map)
             }
             eprintln!("{:?}", self.feasible_ps)
         }
@@ -765,13 +764,13 @@ impl Opponent {
         self.feasible_ps = self.feasible_ps.iter().flat_map(|pos| {
             DIRECTIONS.iter().flat_map(move |&dir|
                 map.cells_along(&pos.clone(), dir, max_sonar_dist)
-                //NICE: I could use opp.visited here, to drop paths through visited cells
+                //NICE: I could use them.visited here, to drop paths through visited cells
             ).chain(iter::once(pos.clone()))
         }).collect();
         self.feasible_ps.sort_unstable();
         self.feasible_ps.dedup();
 
-        // rather than opp.visited (only works when position_is_known),
+        // rather than them.visited (only works when position_is_known),
         //  I should just spam traceback (until latest Surface, returns bool if feasible),
         //  and visited would be just another internal parameter of traceback
     }
@@ -784,13 +783,13 @@ impl Opponent {
                 |pos| ! map.belongs_to_sector(pos, sector)
             )
         }
-        // I should keep this in Opp's history though, before the turn's action_seq.
-        // I may change OppAction to OppEvent, and include MySonar there
+        // I should keep this in Them's history though, before the turn's action_seq.
+        // I may change TheirAction to OppEvent, and include MySonar there
     }
 
     fn sonar_potential(&self) -> f32 {
         // TODO: how much will feasible_ps decrease (candidates in sector_to_sonar)
-        // NICE: bring Opp.sonar_cooldown into the fold
+        // NICE: bring Them.sonar_cooldown into the fold
         let is_good = self.is_position_tracked()
             && self.is_position_known()
             && self.is_position_narrow();
@@ -821,18 +820,18 @@ impl Opponent {
 }
 
 impl Me {
-    fn next_actions(&self, global: &Global, opp: &Opponent) -> ActionSeq {
+    fn next_actions(&self, global: &Global, them: &Them) -> ActionSeq {
         let mut action_seq = ActionSeq::new();
         let viable_moves = self.viable_moves(&global.map);
         let have_to_surface = viable_moves.is_empty();
-        let should_fire = self.should_fire(&opp, &global.map);
-        let should_sonar = self.should_sonar(&opp);
+        let should_fire = self.should_fire(&them, &global.map);
+        let should_sonar = self.should_sonar(&them);
 
         if have_to_surface {
             action_seq.push(Action::Surface)
         }
         /*if may_fire {
-            let possible_torpedoes = Action.torpedoes_impacting(&opp.position());
+            let possible_torpedoes = Action.torpedoes_impacting(&them.position());
             let combinations = ActionSeq.viable_combinations(&viable_moves, &possible_torpedoes, &self, &global.map);
             let scores = combinations.iter().map(|&c| c.score());
             // score params: my_lives, their_lives, my_pos
@@ -842,17 +841,17 @@ impl Me {
 
         }*/
         if should_fire {
-            action_seq.push(Action::Torpedo{ target: opp.position() })
+            action_seq.push(Action::Torpedo{ target: them.position() })
         }
         if !have_to_surface {
             // TODO: better pathing, including Silence
-            let device = self.device_to_charge(opp);
+            let device = self.device_to_charge(them);
             action_seq.push(
                 viable_moves[0].but_charge(device)
             )
         }
         if should_sonar {
-            let sector = opp.sector_to_sonar(&global.map);
+            let sector = them.sector_to_sonar(&global.map);
             action_seq.push(Action::Sonar { sector })
         }
 
