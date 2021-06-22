@@ -797,15 +797,11 @@ impl Them {
         self.pos_candidates = self.pos_candidates.iter().flat_map(|pos| {
             DIRECTIONS.iter().flat_map(move |&dir|
                 map.cells_along(&pos.clone(), dir, max_sonar_dist)
-                //NICE: I could use them.visited here, to drop paths through visited cells
+                //TODO: trace_back (to discard visited)
             ).chain(iter::once(pos.clone()))
         }).collect();
         self.pos_candidates.sort_unstable();
         self.pos_candidates.dedup();
-
-        // rather than them.visited (only works when position_is_known),
-        //  I should just spam traceback (until latest Surface, returns bool if feasible),
-        //  and visited would be just another internal parameter of traceback
     }
 
     fn analyze_my_sonar(&mut self, sector: usize, success: bool, map: &Map) {
@@ -870,8 +866,36 @@ impl Them {
         }
     }
 
-    // TODO: traceback moves when I init pos_candidates
-    //       with an action/move history and Coord.before_move()
+    // TODO: trace_back_candidate
+    /*fn trace_back_candidate
+    (
+        &self, event_i: usize, candidate: &Coord, visited: &mut Vec< Vec<Coord> >
+    )
+    {
+        // need a termination condition on event_i. the latest Surface? origin?
+
+        // visited should be Vec< HashSet<Coord> > (and propagate this to Me.visited)
+        // I could make this into its own type, CoordSet
+
+        for i in 0..visited.len() {
+            if ! self.analyze_backwards(event_i, &candidate, &mut visited[i]) {
+                // if this one doesn't check out, the next few neither
+                //  cause if visited.len() > 1, it comes from a Silence divergence
+                //  and if the i_th position of a Silence is invalid, then you can't reach the later ones
+                visited.truncate(i);
+                break
+            }
+        }
+
+        if ! visited.is_empty() {
+            let candidate_before = self.before_event(event_i, &candidate); // Coord.before_move() goes here
+            self.trace_back_candidate(event_i-1, candidate_before, visited)
+        }
+
+        // the final result of this recursion is visited itself (the presence or not of each element)
+        // in a Silence origin, visited is like DIRECTIONS.each_do [{pos}, {pos, pos+1} .. {pos .. pos+4}]
+        // for other origins (when position tracking begins?), visited.len = 1
+    }*/
 }
 
 impl Me {
