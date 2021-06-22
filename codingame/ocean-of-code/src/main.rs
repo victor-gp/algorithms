@@ -47,7 +47,7 @@ struct Me {
 struct Them {
     lives: usize,
     pos_candidates: Vec<Coord>,
-    // event_history: Vec<OppEvent>,
+    // event_history: Vec<TheirEvent>,
     // cooldowns
 }
 
@@ -64,12 +64,14 @@ enum Action {
 const TORPEDO: &str = "TORPEDO";
 const SONAR: &str = "SONAR";
 
-enum TheirAction {
+enum TheirEvent {
     Move { dir: char },
     Surface { sector: usize },
     Torpedo { target: Coord },
     Sonar { sector: usize },
     Silence,
+    MySonar { sector: usize, success: bool },
+    // LifeLoss { usize: lives }
 }
 
 struct ActionSeq(Vec<Action>);
@@ -157,21 +159,20 @@ fn read_turn_info(global: &Global, me: &mut Me, them: &mut Them) {
 
     if global.turn > 2 {
         me.visited.push(me.pos.clone());
-
-        if sonar_result != "NA" {
-            // FIXME: wtf, I forgot this!
-            them.analyze_my_sonar(&sonar_result, /* me.last_sonar_sector() */ 1, &global.map)
-        }
-        let their_actions = TheirAction::seq_from_str(&opponent_orders);
-        them.analyze_actions(&global.map, &their_actions);
     }
-
     me.pos = Coord{x, y};
     me.lives = my_life;
     them.lives = opp_life;
-
     me.torpedo_cooldown = torpedo_cooldown;
     me.sonar_cooldown = sonar_cooldown;
+
+    if global.turn > 2 || ! global.me_first {
+        let mut their_events = TheirEvent::action_seq_from_str(&opponent_orders);
+        if let Some(sonar_event) = me.parse_sonar_result(&sonar_result) {
+            their_events.insert(0, sonar_event)
+        }
+        them.analyze_events(their_events, &global.map);
+    }
 }
 
 use std::fmt;
@@ -241,7 +242,7 @@ impl fmt::Debug for Action {
     }
 }
 
-impl fmt::Debug for TheirAction {
+impl fmt::Debug for TheirEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Move{dir} => write!(f, "MOVE {}", dir),
@@ -249,6 +250,8 @@ impl fmt::Debug for TheirAction {
             Self::Torpedo{target} => write!(f, "TORPEDO {}", target),
             Self::Sonar{sector} => write!(f, "SONAR {}", sector),
             Self::Silence => write!(f, "SILENCE"),
+            Self::MySonar{sector, success} =>
+                write!(f, "(MySonar {} {})", sector, success),
         }
     }
 }
@@ -286,8 +289,8 @@ impl fmt::Debug for ActionSeq {
     }
 }
 
-impl TheirAction {
-    fn from_str(s: &str) -> Option<Self> {
+impl TheirEvent {
+    fn from_action_str(s: &str) -> Option<Self> {
         let mut tokens = s.split_whitespace();
         let token = tokens.next()?;
         match token {
@@ -310,22 +313,26 @@ impl TheirAction {
             },
             "SILENCE" => Some( Self::Silence ),
             _ => {
-                eprintln!("TheirAction::from_str: could not parse string \"{}\"", s);
+                eprintln!("TheirEvent::from_str: could not parse string \"{}\"", s);
                 None
             }
         }
     }
 
-    fn seq_from_str(action_seq: &str) -> Vec<Self> {
-        action_seq.split("|").filter_map(|s| Self::from_str(s)).collect()
-        // return iter?
+    fn action_seq_from_str(action_seq: &str) -> Vec<Self> {
+        action_seq
+            .split("|")
+            .filter_map(|s| Self::from_action_str(s))
+            .collect()
     }
 
     #[allow(dead_code)]
-    fn string_from_seq(seq: Vec<Self>) -> String {
-        seq.iter().map(|action| {
-            format!("{:?}", action)
-        }).collect::< Vec<String> >().join("|")
+    fn string_from_seq(event_seq: Vec<Self>) -> String {
+        event_seq
+            .iter()
+            .map(|action| {format!("{:?}", action)})
+            .collect::<Vec<String>>()
+            .join("|")
     }
 }
 
@@ -714,14 +721,16 @@ impl Them {
             && self.pos_candidates.len() <= 5
     }
 
-    fn analyze_actions(&mut self, map: &Map, actions: &Vec<TheirAction>) {
-        for action in actions {
-            match action {
-                TheirAction::Move{dir} => self.analyze_move(*dir, map),
-                TheirAction::Surface{sector} => self.analyze_surface(*sector, map),
-                TheirAction::Torpedo{target} => self.analyze_torpedo(target, map),
-                TheirAction::Sonar{sector: _} => (),
-                TheirAction::Silence => self.analyze_silence(map)
+    fn analyze_events(&mut self, events: Vec<TheirEvent>, map: &Map) {
+        for event in &events {
+            match event {
+                TheirEvent::Move{dir} => self.analyze_move(*dir, map),
+                TheirEvent::Surface{sector} => self.analyze_surface(*sector, map),
+                TheirEvent::Torpedo{target} => self.analyze_torpedo(target, map),
+                TheirEvent::Sonar{sector: _} => (),
+                TheirEvent::Silence => self.analyze_silence(map),
+                TheirEvent::MySonar{sector, success} =>
+                    self.analyze_my_sonar(*sector, *success, map),
             }
             eprintln!("{:?}", self.pos_candidates)
         }
@@ -778,8 +787,8 @@ impl Them {
         //  and visited would be just another internal parameter of traceback
     }
 
-    fn analyze_my_sonar(&mut self, result: &str, sector: usize, map: &Map) {
-        if result == "Y" {
+    fn analyze_my_sonar(&mut self, sector: usize, success: bool, map: &Map) {
+        if success {
             self.analyze_surface(sector, map)
         } else if self.is_position_tracked() && ! self.is_position_known() {
             self.pos_candidates.retain(
@@ -787,12 +796,11 @@ impl Them {
             )
         }
         // I should keep this in Them's history though, before the turn's action_seq.
-        // I may change TheirAction to OppEvent, and include MySonar there
     }
 
     fn sonar_potential(&self) -> f32 {
         // TODO: how much will pos_candidates decrease (candidates in sector_to_sonar)
-        // NICE: bring Them.sonar_cooldown into the fold
+        // NICE: bring Them.silence_cooldown into the fold
         let is_good = self.is_position_tracked()
             && self.is_position_known()
             && self.is_position_narrow();
@@ -859,5 +867,16 @@ impl Me {
         }
 
         action_seq
+    }
+
+    // FIXME: get the actual sector
+    fn parse_sonar_result(&self, result: &str) -> Option<TheirEvent> {
+        if result != "NA" {
+            let success = result == "Y";
+            Some(TheirEvent::MySonar{ sector:/* me.last_sonar_sector() */ 1, success })
+        }
+        else {
+            None
+        }
     }
 }
