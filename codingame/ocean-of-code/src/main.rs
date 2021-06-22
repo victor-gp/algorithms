@@ -232,9 +232,18 @@ impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Move{dir, charge_device} => write!(f, "MOVE {} {}", dir, charge_device),
-            Self::Surface => write!(f, "SURFACE"),
-            Self::Torpedo{target} => write!(f, "TORPEDO {}", target),
-            Self::Sonar{sector}  => write!(f, "SONAR {}", sector),
+            Self::Surface => {
+                eprintln!("mine:surface");
+                write!(f, "SURFACE")
+            },
+            Self::Torpedo{target} => {
+                eprintln!("mine:torpedo");
+                write!(f, "TORPEDO {}", target)
+            },
+            Self::Sonar{sector} => {
+                eprintln!("mine:sonar");
+                write!(f, "SONAR {}", sector)
+            },
         }
     }
 }
@@ -710,8 +719,12 @@ impl Them {
         }
     }
 
+    fn ncandidates(&self) -> usize {
+        self.pos_candidates.len()
+    }
+
     fn is_position_known(&self) -> bool {
-        self.pos_candidates.len() == 1
+        self.ncandidates() == 1
     }
 
     // cond: position is known
@@ -720,13 +733,13 @@ impl Them {
     }
 
     fn is_position_tracked(&self) -> bool {
-        ! self.pos_candidates.is_empty()
+        self.ncandidates() != 0
     }
 
     // as in "narrowed down"
     fn is_position_narrow(&self) -> bool {
-        1 < self.pos_candidates.len()
-            && self.pos_candidates.len() <= 25
+        1 < self.ncandidates()
+            && self.ncandidates() <= 25
     }
 
     fn analyze_events(&mut self, events: Vec<TheirEvent>, map: &Map) {
@@ -740,7 +753,7 @@ impl Them {
                 TheirEvent::MySonar{sector, success} =>
                     self.analyze_my_sonar(*sector, *success, map),
             }
-            eprintln!("total:{} {:?}", self.pos_candidates.len(), self.pos_candidates)
+            eprintln!("total:{} {:?}", self.ncandidates(), self.pos_candidates)
         }
     }
 
@@ -810,7 +823,7 @@ impl Them {
         if ! self.is_position_tracked() ||  self.is_position_known() {
             return 0.
         }
-        let ncandidates = self.pos_candidates.len();
+        let ncandidates = self.ncandidates();
         let min_discarded = self.sonar_discrimination(&map);
         let proportion = min_discarded as f32 / ncandidates as f32; // max = 0.5
 
@@ -826,10 +839,10 @@ impl Them {
     // cond: position is tracked
     // lower bound on pos_candidates to be discarded
     fn sonar_discrimination(&self, map: &Map) -> usize {
-        let (_sector, ncandidates) = self.sector_most_candidates(&map);
+        let (_sector, most_candidates) = self.sector_most_candidates(&map);
         cmp::min(
-            ncandidates,
-            self.pos_candidates.len() - ncandidates
+            most_candidates,
+            self.ncandidates() - most_candidates
         )
     }
 
@@ -884,7 +897,6 @@ impl Me {
         }*/
         if should_fire {
             action_seq.push(Action::Torpedo{ target: them.position() });
-            eprintln!("me:torpedo");
         }
         if !have_to_surface {
             // TODO: better pathing, including Silence
@@ -896,7 +908,6 @@ impl Me {
         if should_sonar {
             let (sector, _) = them.sector_most_candidates(&global.map);
             action_seq.push(Action::Sonar { sector });
-            eprintln!("me:sonar");
         }
 
         action_seq
