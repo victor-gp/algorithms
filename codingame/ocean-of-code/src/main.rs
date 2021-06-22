@@ -691,16 +691,16 @@ impl Me {
         }
     }
 
-    fn should_sonar(&self, them: &Them) -> bool {
+    fn should_sonar(&self, them: &Them, map: &Map) -> bool {
         if self.sonar_cooldown > 0 { return false }
-        let sonar_score = them.sonar_potential();
 
-        sonar_score > 0.5
+        them.sonar_score(&map) > 0.5
     }
 }
 
 use std::iter;
 use std::collections::HashMap;
+use std::cmp;
 
 impl Them {
     fn new() -> Them {
@@ -740,7 +740,7 @@ impl Them {
                 TheirEvent::MySonar{sector, success} =>
                     self.analyze_my_sonar(*sector, *success, map),
             }
-            eprintln!("{}: {:?}", self.pos_candidates.len(), self.pos_candidates)
+            eprintln!("total:{} {:?}", self.pos_candidates.len(), self.pos_candidates)
         }
     }
 
@@ -805,32 +805,55 @@ impl Them {
         }
     }
 
-    fn sonar_potential(&self) -> f32 {
-        // TODO: how much will pos_candidates decrease (candidates in sector_to_sonar)
+    fn sonar_score(&self, map: &Map) -> f32 {
         // NICE: bring Them.silence_cooldown into the fold
-        let is_good =
-            self.is_position_tracked()
-            && ! self.is_position_known()
-            && self.is_position_narrow();
+        if ! self.is_position_tracked() ||  self.is_position_known() {
+            return 0.
+        }
+        let ncandidates = self.pos_candidates.len();
+        let min_discarded = self.sonar_discrimination(&map);
+        let proportion = min_discarded as f32 / ncandidates as f32; // max = 0.5
 
-        if is_good { 1. }
-        else { 0. }
+        let answer =
+            min_discarded != 0 && (
+                ncandidates < 10
+                || ncandidates < 25 && proportion > 0.2
+                || proportion > 0.4
+            );
+        if answer { 1. } else { 0. }
     }
 
-    fn sector_to_sonar(&self, map: &Map) -> usize {
-        let sectors = self.pos_candidates.iter().map(|pos| map.sector_from(pos));
+    // cond: position is tracked
+    // lower bound on pos_candidates to be discarded
+    fn sonar_discrimination(&self, map: &Map) -> usize {
+        let (_sector, ncandidates) = self.sector_most_candidates(&map);
+        cmp::min(
+            ncandidates,
+            self.pos_candidates.len() - ncandidates
+        )
+    }
+
+    // cond: position is tracked
+    // ret = (sector, number of candidates)
+    fn sector_most_candidates(&self, map: &Map) -> (usize, usize) {
+        let sectors =
+            self.pos_candidates
+            .iter()
+            .map(|pos| map.sector_from(pos));
+
         let mut sector_counts = HashMap::new();
         for sector in sectors {
-            let sector_count = sector_counts.entry(sector).or_insert(1);
+            let sector_count = sector_counts.entry(sector).or_insert(0);
             *sector_count += 1;
         }
-        let max = sector_counts
-                  .iter()
-                  .max_by(|a, b| a.1.cmp(&b.1))
-                  .map(|(s, _)| s);
+        let max =
+            sector_counts
+            .iter()
+            .max_by(|a, b| a.1.cmp(&b.1));
+
         match max {
-            Some(&sector) => sector,
-            None => 1
+            Some((&sector, &ncandidates)) => (sector, ncandidates),
+            None => panic!("Them::sector_most_candidates: used without position_is_tracked?")
         }
     }
 
@@ -844,7 +867,7 @@ impl Me {
         let viable_moves = self.viable_moves(&global.map);
         let have_to_surface = viable_moves.is_empty();
         let should_fire = self.should_fire(&them, &global.map);
-        let should_sonar = self.should_sonar(&them);
+        let should_sonar = self.should_sonar(&them, &global.map);
 
         if have_to_surface {
             action_seq.push(Action::Surface)
@@ -860,7 +883,8 @@ impl Me {
 
         }*/
         if should_fire {
-            action_seq.push(Action::Torpedo{ target: them.position() })
+            action_seq.push(Action::Torpedo{ target: them.position() });
+            eprintln!("me:torpedo");
         }
         if !have_to_surface {
             // TODO: better pathing, including Silence
@@ -870,8 +894,9 @@ impl Me {
             )
         }
         if should_sonar {
-            let sector = them.sector_to_sonar(&global.map);
-            action_seq.push(Action::Sonar { sector })
+            let (sector, _) = them.sector_most_candidates(&global.map);
+            action_seq.push(Action::Sonar { sector });
+            eprintln!("me:sonar");
         }
 
         action_seq
