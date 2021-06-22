@@ -37,13 +37,15 @@ struct Global {
 struct Me {
     lives: usize,
     pos: Coord,
-    visited: Vec<Coord>,
+    visited: CoordSet,
     torpedo_cooldown: usize,
     sonar_cooldown: usize,
     // silence_cooldown: usize,
     // mine_cooldown: usize,
     last_sonar_sector: usize,
 }
+
+type CoordSet = HashSet<Coord>;
 
 struct Them {
     lives: usize,
@@ -88,7 +90,7 @@ struct Map {
     water: Vec<Coord>,
 }
 
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 // agnostic of Map, doesnt't care about bounds or Water/Land
 struct Coord {
     x: usize,
@@ -99,8 +101,6 @@ const DIRECTIONS: [char; 4] = ['N', 'E', 'S', 'W'];
 
 enum Cell { Water, Land }
 
-use std::time::{Duration, Instant};
-
 struct Timer {
     start: Instant,
     turns_acc: Duration,
@@ -108,6 +108,14 @@ struct Timer {
 }
 
 use std::io;
+use std::fmt;
+use std::ops::{Deref, DerefMut};
+use std::time::{Duration, Instant};
+use std::ptr;
+use rand::seq::IteratorRandom;
+use std::iter;
+use std::collections::{HashMap, HashSet};
+use std::cmp;
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => ($x.trim().parse::<$t>().unwrap())
@@ -161,7 +169,7 @@ fn read_turn_info(global: &Global, me: &mut Me, them: &mut Them) {
     let opponent_orders = input_line.trim_matches('\n').to_string();
 
     if global.turn > 2 {
-        me.visited.push(me.pos.clone());
+        me.visited.insert(me.pos.clone());
     }
     me.pos = Coord{x, y};
     me.lives = my_life;
@@ -177,8 +185,6 @@ fn read_turn_info(global: &Global, me: &mut Me, them: &mut Them) {
         them.analyze_events(their_events, &global.map);
     }
 }
-
-use std::fmt;
 
 impl fmt::Debug for Map {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -268,8 +274,6 @@ impl fmt::Debug for TheirEvent {
     }
 }
 
-use std::ops::{Deref, DerefMut};
-
 impl Deref for ActionSeq {
     type Target = Vec<Action>;
 
@@ -347,8 +351,6 @@ impl TheirEvent {
             .join("|")
     }
 }
-
-use std::ptr;
 
 impl Timer {
     fn new() -> Timer {
@@ -616,8 +618,6 @@ impl Coord {
     }
 }
 
-use rand::seq::IteratorRandom;
-
 impl Global {
     fn new(map: Map, my_id: usize) -> Global {
         Global {
@@ -638,7 +638,7 @@ impl Me {
         Me {
             lives: 0,
             pos: Coord{x: 0, y: 0},
-            visited: Vec::new(),
+            visited: CoordSet::new(),
             torpedo_cooldown: 0,
             sonar_cooldown: 0,
             last_sonar_sector: 0,
@@ -706,10 +706,6 @@ impl Me {
         them.sonar_score(&map) > 0.5
     }
 }
-
-use std::iter;
-use std::collections::HashMap;
-use std::cmp;
 
 impl Them {
     fn new() -> Them {
@@ -869,13 +865,10 @@ impl Them {
     // TODO: trace_back_candidate
     /*fn trace_back_candidate
     (
-        &self, event_i: usize, candidate: &Coord, visited: &mut Vec< Vec<Coord> >
+        &self, event_i: usize, candidate: &Coord, visited: &mut Vec<CoordSet>
     )
     {
         // need a termination condition on event_i. the latest Surface? origin?
-
-        // visited should be Vec< HashSet<Coord> > (and propagate this to Me.visited)
-        // I could make this into its own type, CoordSet
 
         for i in 0..visited.len() {
             if ! self.analyze_backwards(event_i, &candidate, &mut visited[i]) {
