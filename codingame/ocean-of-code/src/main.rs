@@ -38,9 +38,9 @@ struct Me {
     lives: usize,
     pos: Coord,
     visited: Vec<Coord>,
-    torpedo_cooldown: i32,
-    // sonar_cooldown: i32,
-    // silence_cooldown: i32,
+    torpedo_cooldown: usize,
+    sonar_cooldown: usize,
+    // silence_cooldown: usize,
     // mine_cooldown: i32,
 }
 
@@ -57,8 +57,8 @@ enum Action {
     Move { dir: char, charge_device: &'static str },
     Surface,
     Torpedo { target: Coord },
-    // TODO: SONAR, SILENCE
-    // Msg { message: &'static str },
+    Sonar { sector: usize },
+    // TODO: SILENCE
 }
 
 const TORPEDO: &str = "TORPEDO";
@@ -145,9 +145,9 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
     let y = parse_input!(inputs[1], usize);
     let my_life = parse_input!(inputs[2], usize);
     let opp_life = parse_input!(inputs[3], usize);
-    let torpedo_cooldown = parse_input!(inputs[4], i32);
-    let sonar_cooldown = parse_input!(inputs[5], i32);
-    let silence_cooldown = parse_input!(inputs[6], i32);
+    let torpedo_cooldown = parse_input!(inputs[4], usize);
+    let sonar_cooldown = parse_input!(inputs[5], usize);
+    let silence_cooldown = parse_input!(inputs[6], usize);
     let mine_cooldown = parse_input!(inputs[7], i32);
     let mut input_line = String::new();
     io::stdin().read_line(&mut input_line).unwrap();
@@ -171,6 +171,7 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
     opp.lives = opp_life;
 
     me.torpedo_cooldown = torpedo_cooldown;
+    me.sonar_cooldown = sonar_cooldown;
 }
 
 use std::fmt;
@@ -226,9 +227,10 @@ impl Cell {
 impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Action::Move{dir, charge_device} => write!(f, "MOVE {} {}", dir, charge_device),
-            Action::Surface => write!(f, "SURFACE"),
-            Action::Torpedo{target} => write!(f, "TORPEDO {}", target),
+            Self::Move{dir, charge_device} => write!(f, "MOVE {} {}", dir, charge_device),
+            Self::Surface => write!(f, "SURFACE"),
+            Self::Torpedo{target} => write!(f, "TORPEDO {}", target),
+            Self::Sonar{sector}  => write!(f, "SONAR {}", sector),
         }
     }
 }
@@ -482,6 +484,13 @@ impl Map {
 
         (min_x, min_y)
     }
+
+    fn sector_from(&self, pos: &Coord) -> usize {
+        let vertical = pos.y / 5;
+        let horizontal = pos.x / 5;
+
+        vertical*3 + horizontal + 1
+    }
 }
 
 impl Coord {
@@ -544,11 +553,13 @@ impl Me {
             pos: Coord{x: 0, y: 0},
             visited: Vec::new(),
             torpedo_cooldown: 0,
+            sonar_cooldown: 0,
         }
     }
 }
 
 use std::iter;
+use std::collections::HashMap;
 
 impl Opponent {
     fn new() -> Opponent {
@@ -569,6 +580,12 @@ impl Opponent {
 
     fn is_position_tracked(&self) -> bool {
         ! self.feasible_ps.is_empty()
+    }
+
+    // as in "narrowed down"
+    fn is_position_narrow(&self) -> bool {
+        1 <= self.feasible_ps.len()
+            && self.feasible_ps.len() <= 5
     }
 
     fn analyze_actions(&mut self, map: &Map, actions: &Vec<OppAction>) {
@@ -644,6 +661,34 @@ impl Opponent {
         // I may change OppAction to OppEvent, and include MySonar there
     }
 
+    fn sonar_potential(&self) -> f32 {
+        // TODO: how much will feasible_ps decrease (candidates in sector_to_sonar)
+        // TODO: bring Opp.cooldown into the fold
+        let is_good = self.is_position_tracked()
+            && self.is_position_known()
+            && self.is_position_narrow();
+
+        if is_good { 1. }
+        else { 0. }
+    }
+
+    fn sector_to_sonar(&self, map: &Map) -> usize {
+        let sectors = self.feasible_ps.iter().map(|&pos| map.sector_from(&pos));
+        let mut sector_counts = HashMap::new();
+        for sector in sectors {
+            let sector_count = sector_counts.entry(sector).or_insert(1);
+            *sector_count += 1;
+        }
+        let max = sector_counts
+                  .iter()
+                  .max_by(|a, b| a.1.cmp(&b.1))
+                  .map(|(s, _)| s);
+        match max {
+            Some(&sector) => sector,
+            None => 1
+        }
+    }
+
     // TODO: traceback moves when I init feasible_ps
     //       with an action/move history and Coord.before_move()
 }
@@ -663,6 +708,7 @@ impl Me {
         let viable_moves = self.viable_moves(&global.map);
         let have_to_surface = viable_moves.is_empty();
         let should_fire = self.should_fire(&opp, &global.map);
+        let should_sonar = self.should_sonar(&opp);
 
         if have_to_surface {
             action_seq.push(Action::Surface)
@@ -682,11 +728,16 @@ impl Me {
         }
         if !have_to_surface {
             // TODO: better pathing, including Silence
-            let device = self.device_to_charge();
+            let device = self.device_to_charge(opp);
             action_seq.push(
-                viable_moves[0].but_charge(SONAR)
+                viable_moves[0].but_charge(device)
             )
         }
+        if should_sonar {
+            let sector = opp.sector_to_sonar(&global.map);
+            action_seq.push(Action::Sonar { sector })
+        }
+
 
         action_seq
     }
@@ -702,17 +753,6 @@ impl Me {
             }
             else { None }
         }).collect()
-    }
-
-    fn may_fire(&self, opp: &Opponent, map: &Map) -> bool {
-        self.torpedo_cooldown == 0
-            && opp.is_position_known()
-            && match map.distance(&self.pos, &opp.position()) {
-                // torpedo range (4) + impact area (1) + approaching move (1)
-                // FIXME: impact area may be 2, counting diagonals...
-                Some(distance) => distance <= 6,
-                None => false
-            }
     }
 
     fn register_actions(&mut self, actions: &ActionSeq) {
@@ -733,10 +773,31 @@ impl Me {
             }
     }
 
-    fn device_to_charge(&self) -> &'static str {
+    fn device_to_charge(&self, opp: &Opponent) -> &'static str {
+        let sonar_discharged = self.sonar_cooldown > 0;
+        let torpedo_discharged = self.torpedo_cooldown > 0;
+        // NICE: consider the CD amount
         // NICE: take into account the CDs after the incoming action_seq
 
-        SONAR
+        if ! sonar_discharged {
+            TORPEDO
+        }
+        else if ! torpedo_discharged {
+            SONAR
+        }
+        else if opp.is_position_narrow() { // NICE: && are we close enough?
+            TORPEDO
+        }
+        else {
+            SONAR
+        }
+    }
+
+    fn should_sonar(&self, opp: &Opponent) -> bool {
+        if self.sonar_cooldown > 0 { return false }
+        let sonar_score = opp.sonar_potential();
+
+        sonar_score > 0.5
     }
 }
 
