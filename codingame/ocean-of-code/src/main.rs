@@ -61,6 +61,7 @@ enum Action {
     // TODO: SILENCE
 }
 
+// devices for Action::Move.charge_device
 const TORPEDO: &str = "TORPEDO";
 const SONAR: &str = "SONAR";
 
@@ -71,6 +72,10 @@ enum OppAction {
     Sonar { sector: usize },
     Silence,
 }
+
+struct ActionSeq(Vec<Action>);
+// NICE: make this a generic type to contain both action types (mainly for IO purposes)
+//       with an IOAction trait (Display, Debug, from_str) implemented by the two types
 
 struct Map {
     width: usize,
@@ -253,6 +258,39 @@ impl fmt::Debug for OppAction {
     }
 }
 
+use std::ops::{Deref, DerefMut};
+
+impl Deref for ActionSeq {
+    type Target = Vec<Action>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for ActionSeq {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+// NICE: try adversarial output (whitespace, inCoNsISteNt cASE)
+impl fmt::Display for ActionSeq {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let seq_string = self.iter().map(|action| {
+            format!("{}", action)
+        }).collect::< Vec<String> >().join("|");
+
+        write!(f, "{}", seq_string)
+    }
+}
+
+impl fmt::Debug for ActionSeq {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
 impl OppAction {
     fn from_str(s: &str) -> Option<Self> {
         let mut tokens = s.split_whitespace();
@@ -328,6 +366,27 @@ impl Timer {
 
     fn get_turn_pointer(&mut self, global: &Global) {
         self.turn_ptr = &global.turn;
+    }
+}
+
+impl Action {
+    fn new_move(dir: char) -> Action {
+        Action::Move { dir , charge_device: TORPEDO }
+    }
+
+    fn but_charge(&self, device: &'static str) -> Action {
+        if let Action::Move{ dir, charge_device: _} = self {
+            Action::Move { dir: *dir, charge_device: device }
+        }
+        else {
+            panic!("used Action::but_charge on \"{}\", should be a Move", self)
+        }
+    }
+}
+
+impl ActionSeq {
+    fn new() -> Self {
+        ActionSeq(Vec::new())
     }
 }
 
@@ -546,6 +605,15 @@ impl Coord {
     }
 }
 
+use rand::seq::IteratorRandom;
+
+impl Global {
+    fn initial_pos(&self) -> &Coord {
+        self.map.water.iter()
+            .choose(&mut rand::thread_rng()).unwrap()
+    }
+}
+
 impl Me {
     fn new() -> Me {
         Me {
@@ -555,6 +623,65 @@ impl Me {
             torpedo_cooldown: 0,
             sonar_cooldown: 0,
         }
+    }
+
+    fn viable_moves(&self, map: &Map) -> Vec<Action> {
+        // TODO: use DIRECTIONS
+        let directions = ['N', 'E', 'S', 'W'];
+        let destinations = directions.iter().map(|&dir| self.pos.after_move(dir));
+
+        directions.iter().zip(destinations).filter_map(|dir_dest| {
+            let (&dir, dest) = dir_dest;
+            if map.is_water(dest) && ! self.visited.contains(&dest) {
+                Some(Action::new_move(dir))
+            }
+            else { None }
+        }).collect()
+    }
+
+    fn register_actions(&mut self, actions: &ActionSeq) {
+        if actions.contains(&Action::Surface) {
+            self.visited.clear()
+        }
+        // torpedo charge is included in turn info
+    }
+
+    fn should_fire(&self, opp: &Opponent, map: &Map) -> bool {
+        self.torpedo_cooldown == 0
+            && opp.is_position_known()
+            && match map.distance(&self.pos, &opp.position()) {
+                // torpedo impact area = target + 1 including diagonals
+                // torpedo range = 4
+                Some(distance) => 2 <= distance && distance <= 4,
+                None => false
+            }
+    }
+
+    fn device_to_charge(&self, opp: &Opponent) -> &'static str {
+        let sonar_discharged = self.sonar_cooldown > 0;
+        let torpedo_discharged = self.torpedo_cooldown > 0;
+        // NICE: consider the CD amount
+        // NICE: take into account the CDs after the incoming action_seq
+
+        if ! sonar_discharged {
+            TORPEDO
+        }
+        else if ! torpedo_discharged {
+            SONAR
+        }
+        else if opp.is_position_narrow() { // NICE: && are we close enough?
+            TORPEDO
+        }
+        else {
+            SONAR
+        }
+    }
+
+    fn should_sonar(&self, opp: &Opponent) -> bool {
+        if self.sonar_cooldown > 0 { return false }
+        let sonar_score = opp.sonar_potential();
+
+        sonar_score > 0.5
     }
 }
 
@@ -693,15 +820,6 @@ impl Opponent {
     //       with an action/move history and Coord.before_move()
 }
 
-use rand::seq::IteratorRandom;
-
-impl Global {
-    fn initial_pos(&self) -> &Coord {
-        self.map.water.iter()
-            .choose(&mut rand::thread_rng()).unwrap()
-    }
-}
-
 impl Me {
     fn next_actions(&self, global: &Global, opp: &Opponent) -> ActionSeq {
         let mut action_seq = ActionSeq::new();
@@ -738,123 +856,6 @@ impl Me {
             action_seq.push(Action::Sonar { sector })
         }
 
-
         action_seq
-    }
-
-    fn viable_moves(&self, map: &Map) -> Vec<Action> {
-        let directions = ['N', 'E', 'S', 'W'];
-        let destinations = directions.iter().map(|&dir| self.pos.after_move(dir));
-
-        directions.iter().zip(destinations).filter_map(|dir_dest| {
-            let (&dir, dest) = dir_dest;
-            if map.is_water(dest) && ! self.visited.contains(&dest) {
-                Some(Action::new_move(dir))
-            }
-            else { None }
-        }).collect()
-    }
-
-    fn register_actions(&mut self, actions: &ActionSeq) {
-        if actions.contains(&Action::Surface) {
-            self.visited.clear()
-        }
-        // torpedo charge is included in turn info
-    }
-
-    fn should_fire(&self, opp: &Opponent, map: &Map) -> bool {
-        self.torpedo_cooldown == 0
-            && opp.is_position_known()
-            && match map.distance(&self.pos, &opp.position()) {
-                // torpedo impact area = target + 1 including diagonals
-                // torpedo range = 4
-                Some(distance) => 2 <= distance && distance <= 4,
-                None => false
-            }
-    }
-
-    fn device_to_charge(&self, opp: &Opponent) -> &'static str {
-        let sonar_discharged = self.sonar_cooldown > 0;
-        let torpedo_discharged = self.torpedo_cooldown > 0;
-        // NICE: consider the CD amount
-        // NICE: take into account the CDs after the incoming action_seq
-
-        if ! sonar_discharged {
-            TORPEDO
-        }
-        else if ! torpedo_discharged {
-            SONAR
-        }
-        else if opp.is_position_narrow() { // NICE: && are we close enough?
-            TORPEDO
-        }
-        else {
-            SONAR
-        }
-    }
-
-    fn should_sonar(&self, opp: &Opponent) -> bool {
-        if self.sonar_cooldown > 0 { return false }
-        let sonar_score = opp.sonar_potential();
-
-        sonar_score > 0.5
-    }
-}
-
-struct ActionSeq(Vec<Action>);
-// NICE: make this a generic type to contain both action types (mainly for IO purposes)
-//       with an IOAction trait (Display, Debug, from_str) implemented by the two types
-
-use std::ops::{Deref, DerefMut};
-
-impl Deref for ActionSeq {
-    type Target = Vec<Action>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for ActionSeq {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-// NICE: try adversarial output (whitespace, inCoNsISteNt cASE)
-impl fmt::Display for ActionSeq {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let seq_string = self.iter().map(|action| {
-            format!("{}", action)
-        }).collect::< Vec<String> >().join("|");
-
-        write!(f, "{}", seq_string)
-    }
-}
-
-impl fmt::Debug for ActionSeq {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
-    }
-}
-
-impl ActionSeq {
-    fn new() -> Self {
-        ActionSeq(Vec::new())
-    }
-}
-
-impl Action {
-    fn new_move(dir: char) -> Action {
-        Action::Move { dir , charge_device: TORPEDO }
-    }
-
-    fn but_charge(&self, device: &'static str) -> Action {
-        if let Action::Move{ dir, charge_device: _} = self {
-            Action::Move { dir: *dir, charge_device: device }
-        }
-        else {
-            panic!("used Action::but_charge on \"{}\", should be a Move", self)
-        }
     }
 }
