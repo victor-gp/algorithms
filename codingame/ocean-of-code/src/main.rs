@@ -41,7 +41,7 @@ struct Me {
     torpedo_cooldown: usize,
     sonar_cooldown: usize,
     // silence_cooldown: usize,
-    // mine_cooldown: i32,
+    // mine_cooldown: usize,
 }
 
 struct Opponent {
@@ -52,7 +52,7 @@ struct Opponent {
     // cooldowns
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(PartialEq)]
 enum Action {
     Move { dir: char, charge_device: &'static str },
     Surface,
@@ -84,7 +84,7 @@ struct Map {
     water: Vec<Coord>,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 // agnostic of Map, doesnt't care about bounds or Water/Land
 struct Coord {
     x: usize,
@@ -133,12 +133,7 @@ fn read_starting_info() -> Global {
     let map = Map::new(width, height, grid);
     eprintln!("{:?}", map);
 
-    Global {
-        map,
-        turn: 1,
-        game_turns: 300,
-        me_first: my_id == 0
-    }
+    Global::new(map, my_id)
 }
 
 #[allow(unused_variables)]
@@ -162,9 +157,10 @@ fn read_turn_info(global: &Global, me: &mut Me, opp: &mut Opponent) {
     let opponent_orders = input_line.trim_matches('\n').to_string();
 
     if global.turn > 2 {
-        me.visited.push(me.pos);
+        me.visited.push(me.pos.clone());
 
         if sonar_result != "NA" {
+            // FIXME: wtf, I forgot this!
             opp.analyze_my_sonar(&sonar_result, /* me.last_sonar_sector() */ 1, &global.map)
         }
         let opp_actions = OppAction::seq_from_str(&opponent_orders);
@@ -398,26 +394,25 @@ impl Map {
     }
 
     // internal, Map methods only!
-    fn cell_at(&self, coord: Coord) -> &Cell {
+    fn cell_at(&self, coord: &Coord) -> &Cell {
         &self.grid[coord.y][coord.x]
     }
 
-    fn is_within_bounds(&self, coord: Coord) -> bool {
+    fn is_within_bounds(&self, coord: &Coord) -> bool {
         // no need for 0 <= coords cause usize overflows on -1
         coord.x < self.width
             && coord.y < self.height
     }
 
     // use this to skip the is_within_bounds() check
-    // TODO: borrow coord, don't copy
-    fn is_water(&self, coord: Coord) -> bool {
-        self.is_within_bounds(coord)
-            && self.cell_at(coord).is_water_cell()
+    fn is_water(&self, coord: &Coord) -> bool {
+        self.is_within_bounds(&coord)
+            && self.cell_at(&coord).is_water_cell()
     }
 
-    fn is_viable_move(&self, pos: Coord, dir: char) -> bool {
+    fn is_viable_move(&self, pos: &Coord, dir: char) -> bool {
         let dest = pos.after_move(dir);
-        self.is_water(dest)
+        self.is_water(&dest)
     }
 
     fn water_positions(grid: &Vec<Vec<Cell>>) -> Vec<Coord> {
@@ -433,7 +428,7 @@ impl Map {
         }).collect::<Vec<Coord>>()
     }
 
-    // TODO: precalculate all distances at Map::new() time
+    // TODO: try to precalculate all distances at Map::new() time
     // cond: a, b are coords to water cells
     fn distance(&self, a: &Coord, b: &Coord) -> Option<usize> {
         let mut visited = vec![vec![false; self.width]; self.height];
@@ -445,7 +440,7 @@ impl Map {
         if a == b { return Some(0) }
 
         for coord in a.neighbors_by_direction(b).iter()
-                      .filter(|&coord| self.is_water(*coord)) {
+                      .filter(|&coord| self.is_water(&coord)) {
             if visited[coord.y][coord.x] { continue }
             visited[coord.y][coord.x] = true;
 
@@ -458,15 +453,15 @@ impl Map {
     }
 
     // invariant: a, b are coords to water cells
-    fn are_within_distance(&self, a: Coord, b: Coord, distance: usize) -> bool {
+    fn are_within_distance(&self, a: &Coord, b: &Coord, distance: usize) -> bool {
         if a == b {
             return true
-        } else if distance == 0 || a.min_distance(b) > distance {
+        } else if distance == 0 || a.min_distance(&b) > distance {
             return false
         }
 
         for coord in a.neighbors_by_direction(&b) {
-            if self.is_water(coord) && self.are_within_distance(coord, b, distance-1) {
+            if self.is_water(&coord) && self.are_within_distance(&coord, b, distance-1) {
                 return true
             }
         }
@@ -474,12 +469,12 @@ impl Map {
     }
 
     // water cells_only, land cells are stepped around
-    fn cells_within_distance(&self, pos: Coord, distance: usize) -> Vec<Coord> {
+    fn cells_within_distance(&self, pos: &Coord, distance: usize) -> Vec<Coord> {
         let mut cells = Vec::with_capacity(
             // max possible number of cells within this distance of pos
             (distance+1).pow(2) + distance.pow(2)
         );
-        cells.push(pos);
+        cells.push(pos.clone());
         // BFS
         let mut pre_iter_start = 0;
         for _ in 1..=distance {
@@ -490,7 +485,7 @@ impl Map {
             );
             for pos in &cells[pre_iter_start..] {
                 let neighbors = pos.neighbors().into_iter().filter(|coord| {
-                    self.is_water(*coord) && ! cells[pre_iter_start..].contains(coord)
+                    self.is_water(coord) && ! cells[pre_iter_start..].contains(coord)
                 });
                 for neighbor in neighbors {
                     if ! new_neighbors.contains(&neighbor) {
@@ -511,7 +506,7 @@ impl Map {
         if n == 0 { return Vec::new() }
 
         let next = pos.after_move(dir);
-        if self.is_water(next) {
+        if self.is_water(&next) {
             let mut ret = self.cells_along(&next, dir, n-1);
             ret.insert(0, next);
             ret
@@ -531,7 +526,7 @@ impl Map {
         let cells_from_sector = Coord::range(min_x, min_x + 4, min_y, min_y + 4);
 
         cells_from_sector.into_iter().filter(
-            |coord| self.cell_at(*coord).is_water_cell()
+            |coord| self.cell_at(coord).is_water_cell()
         ).collect()
     }
 
@@ -563,21 +558,19 @@ impl Coord {
         }
     }
 
-    // TODO: use DIRECTIONS
     fn neighbors(&self) -> Vec<Coord> {
-        vec![
-            self.after_move('N'),
-            self.after_move('E'),
-            self.after_move('S'),
-            self.after_move('W')
-        ]
+        DIRECTIONS
+            .iter()
+            .map(|&dir| self.after_move(dir))
+            .collect()
     }
 
+    // neighbors sorted by their min_distance to reference_point (the direction)
     fn neighbors_by_direction(&self, reference_point: &Coord) -> Vec<Coord> {
         let mut neighbors = self.neighbors();
         neighbors.sort_by(|a, b| {
-            let dist_a = a.min_distance(*reference_point);
-            let dist_b = b.min_distance(*reference_point);
+            let dist_a = a.min_distance(&reference_point);
+            let dist_b = b.min_distance(&reference_point);
 
             dist_a.partial_cmp(&dist_b).unwrap()
         });
@@ -597,7 +590,7 @@ impl Coord {
     }
 
     // min (possible) distance, doesn't account for cells being Water/Land
-    fn min_distance(&self, other: Coord) -> usize {
+    fn min_distance(&self, other: &Coord) -> usize {
         let distance_x = (self.x as isize - other.x as isize).abs();
         let distance_y = (self.y as isize - other.y as isize).abs();
 
@@ -608,6 +601,14 @@ impl Coord {
 use rand::seq::IteratorRandom;
 
 impl Global {
+    fn new(map: Map, my_id: usize) -> Global {
+        Global {
+            map,
+            turn: 1,
+            game_turns: 300,
+            me_first: my_id == 0
+        }
+    }
     fn initial_pos(&self) -> &Coord {
         self.map.water.iter()
             .choose(&mut rand::thread_rng()).unwrap()
@@ -626,13 +627,12 @@ impl Me {
     }
 
     fn viable_moves(&self, map: &Map) -> Vec<Action> {
-        // TODO: use DIRECTIONS
-        let directions = ['N', 'E', 'S', 'W'];
-        let destinations = directions.iter().map(|&dir| self.pos.after_move(dir));
+        // Coord.neighbors() uses the same order as DIRECTIONS
+        let destinations = self.pos.neighbors();
 
-        directions.iter().zip(destinations).filter_map(|dir_dest| {
+        DIRECTIONS.iter().zip(destinations).filter_map(|dir_dest| {
             let (&dir, dest) = dir_dest;
-            if map.is_water(dest) && ! self.visited.contains(&dest) {
+            if map.is_water(&dest) && ! self.visited.contains(&dest) {
                 Some(Action::new_move(dir))
             }
             else { None }
@@ -643,7 +643,7 @@ impl Me {
         if actions.contains(&Action::Surface) {
             self.visited.clear()
         }
-        // torpedo charge is included in turn info
+        // Move.device_charge is ack'd in the turn info (cooldowns)
     }
 
     fn should_fire(&self, opp: &Opponent, map: &Map) -> bool {
@@ -702,7 +702,7 @@ impl Opponent {
 
     // cond: position is known
     fn position(&self) -> Coord {
-        self.feasible_ps[0]
+        self.feasible_ps[0].clone()
     }
 
     fn is_position_tracked(&self) -> bool {
@@ -731,7 +731,7 @@ impl Opponent {
     fn analyze_move(&mut self, dir: char, map: &Map) {
         if self.is_position_tracked() {
             self.feasible_ps = self.feasible_ps.iter().filter_map(|pos| {
-                if map.is_viable_move(*pos, dir) {
+                if map.is_viable_move(pos, dir) {
                     Some(pos.after_move(dir))
                 } else { None }
             }).collect()
@@ -750,10 +750,10 @@ impl Opponent {
 
     fn analyze_torpedo(&mut self, target: &Coord, map: &Map) {
         if ! self.is_position_tracked() {
-            self.feasible_ps = map.cells_within_distance(*target, 4)
+            self.feasible_ps = map.cells_within_distance(&target, 4)
         } else if ! self.is_position_known() {
             self.feasible_ps.retain(
-                |pos| map.are_within_distance(*pos, *target, 4)
+                |pos| map.are_within_distance(pos, &target, 4)
             )
         }
         // NICE: account for "you can also damage yourself with a torpedo"
@@ -762,11 +762,11 @@ impl Opponent {
 
     fn analyze_silence(&mut self, map: &Map) {
         let max_sonar_dist = 4;
-        self.feasible_ps = self.feasible_ps.iter().flat_map(|&pos| {
+        self.feasible_ps = self.feasible_ps.iter().flat_map(|pos| {
             DIRECTIONS.iter().flat_map(move |&dir|
-                map.cells_along(&pos, dir, max_sonar_dist)
+                map.cells_along(&pos.clone(), dir, max_sonar_dist)
                 //NICE: I could use opp.visited here, to drop paths through visited cells
-            ).chain(iter::once(pos))
+            ).chain(iter::once(pos.clone()))
         }).collect();
         self.feasible_ps.sort_unstable();
         self.feasible_ps.dedup();
@@ -790,7 +790,7 @@ impl Opponent {
 
     fn sonar_potential(&self) -> f32 {
         // TODO: how much will feasible_ps decrease (candidates in sector_to_sonar)
-        // TODO: bring Opp.cooldown into the fold
+        // NICE: bring Opp.sonar_cooldown into the fold
         let is_good = self.is_position_tracked()
             && self.is_position_known()
             && self.is_position_narrow();
@@ -800,7 +800,7 @@ impl Opponent {
     }
 
     fn sector_to_sonar(&self, map: &Map) -> usize {
-        let sectors = self.feasible_ps.iter().map(|&pos| map.sector_from(&pos));
+        let sectors = self.feasible_ps.iter().map(|pos| map.sector_from(pos));
         let mut sector_counts = HashMap::new();
         for sector in sectors {
             let sector_count = sector_counts.entry(sector).or_insert(1);
