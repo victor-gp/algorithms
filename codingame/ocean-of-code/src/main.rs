@@ -46,8 +46,8 @@ struct Me {
 
 struct Them {
     lives: usize,
-    feasible_ps: Vec<Coord>,
-    // move_history: Vec<Move>,
+    pos_candidates: Vec<Coord>,
+    // event_history: Vec<OppEvent>,
     // cooldowns
 }
 
@@ -691,27 +691,27 @@ impl Them {
     fn new() -> Them {
         Them {
             lives: 0,
-            feasible_ps: Vec::new(),
+            pos_candidates: Vec::new(),
         }
     }
 
     fn is_position_known(&self) -> bool {
-        self.feasible_ps.len() == 1
+        self.pos_candidates.len() == 1
     }
 
     // cond: position is known
     fn position(&self) -> Coord {
-        self.feasible_ps[0].clone()
+        self.pos_candidates[0].clone()
     }
 
     fn is_position_tracked(&self) -> bool {
-        ! self.feasible_ps.is_empty()
+        ! self.pos_candidates.is_empty()
     }
 
     // as in "narrowed down"
     fn is_position_narrow(&self) -> bool {
-        1 <= self.feasible_ps.len()
-            && self.feasible_ps.len() <= 5
+        1 < self.pos_candidates.len()
+            && self.pos_candidates.len() <= 5
     }
 
     fn analyze_actions(&mut self, map: &Map, actions: &Vec<TheirAction>) {
@@ -723,25 +723,28 @@ impl Them {
                 TheirAction::Sonar{sector: _} => (),
                 TheirAction::Silence => self.analyze_silence(map)
             }
-            eprintln!("{:?}", self.feasible_ps)
+            eprintln!("{:?}", self.pos_candidates)
         }
     }
 
     fn analyze_move(&mut self, dir: char, map: &Map) {
         if self.is_position_tracked() {
-            self.feasible_ps = self.feasible_ps.iter().filter_map(|pos| {
-                if map.is_viable_move(pos, dir) {
-                    Some(pos.after_move(dir))
-                } else { None }
-            }).collect()
+            self.pos_candidates =
+                self.pos_candidates.iter()
+                .filter_map(|pos| {
+                    if map.is_viable_move(pos, dir) {
+                        Some(pos.after_move(dir))
+                    } else { None }
+                })
+                .collect()
         }
     }
 
     fn analyze_surface(&mut self, sector: usize, map: &Map) {
         if ! self.is_position_tracked() {
-            self.feasible_ps = map.water_cells_from_sector(sector);
+            self.pos_candidates = map.water_cells_from_sector(sector);
         } else if ! self.is_position_known() {
-            self.feasible_ps.retain(
+            self.pos_candidates.retain(
                 |pos| map.belongs_to_sector(pos, sector)
             )
         }
@@ -749,9 +752,9 @@ impl Them {
 
     fn analyze_torpedo(&mut self, target: &Coord, map: &Map) {
         if ! self.is_position_tracked() {
-            self.feasible_ps = map.cells_within_distance(&target, 4)
+            self.pos_candidates = map.cells_within_distance(&target, 4)
         } else if ! self.is_position_known() {
-            self.feasible_ps.retain(
+            self.pos_candidates.retain(
                 |pos| map.are_within_distance(pos, &target, 4)
             )
         }
@@ -761,14 +764,14 @@ impl Them {
 
     fn analyze_silence(&mut self, map: &Map) {
         let max_sonar_dist = 4;
-        self.feasible_ps = self.feasible_ps.iter().flat_map(|pos| {
+        self.pos_candidates = self.pos_candidates.iter().flat_map(|pos| {
             DIRECTIONS.iter().flat_map(move |&dir|
                 map.cells_along(&pos.clone(), dir, max_sonar_dist)
                 //NICE: I could use them.visited here, to drop paths through visited cells
             ).chain(iter::once(pos.clone()))
         }).collect();
-        self.feasible_ps.sort_unstable();
-        self.feasible_ps.dedup();
+        self.pos_candidates.sort_unstable();
+        self.pos_candidates.dedup();
 
         // rather than them.visited (only works when position_is_known),
         //  I should just spam traceback (until latest Surface, returns bool if feasible),
@@ -779,7 +782,7 @@ impl Them {
         if result == "Y" {
             self.analyze_surface(sector, map)
         } else if self.is_position_tracked() && ! self.is_position_known() {
-            self.feasible_ps.retain(
+            self.pos_candidates.retain(
                 |pos| ! map.belongs_to_sector(pos, sector)
             )
         }
@@ -788,7 +791,7 @@ impl Them {
     }
 
     fn sonar_potential(&self) -> f32 {
-        // TODO: how much will feasible_ps decrease (candidates in sector_to_sonar)
+        // TODO: how much will pos_candidates decrease (candidates in sector_to_sonar)
         // NICE: bring Them.sonar_cooldown into the fold
         let is_good = self.is_position_tracked()
             && self.is_position_known()
@@ -799,7 +802,7 @@ impl Them {
     }
 
     fn sector_to_sonar(&self, map: &Map) -> usize {
-        let sectors = self.feasible_ps.iter().map(|pos| map.sector_from(pos));
+        let sectors = self.pos_candidates.iter().map(|pos| map.sector_from(pos));
         let mut sector_counts = HashMap::new();
         for sector in sectors {
             let sector_count = sector_counts.entry(sector).or_insert(1);
@@ -815,7 +818,7 @@ impl Them {
         }
     }
 
-    // TODO: traceback moves when I init feasible_ps
+    // TODO: traceback moves when I init pos_candidates
     //       with an action/move history and Coord.before_move()
 }
 
