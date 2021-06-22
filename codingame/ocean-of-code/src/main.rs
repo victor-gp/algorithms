@@ -72,7 +72,9 @@ enum TheirEvent {
     Sonar { sector: usize },
     Silence,
     MySonar { sector: usize, success: bool },
-    // LifeLoss { usize: lives }
+    // LifeLoss { usize: lives },
+    // Found { pos: Coord },
+    //  alt: Divergence { pre_candidates } if at every Silence
 }
 
 struct ActionSeq(Vec<Action>);
