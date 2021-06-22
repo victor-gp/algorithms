@@ -42,6 +42,7 @@ struct Me {
     sonar_cooldown: usize,
     // silence_cooldown: usize,
     // mine_cooldown: usize,
+    last_sonar_sector: usize,
 }
 
 struct Them {
@@ -629,6 +630,7 @@ impl Me {
             visited: Vec::new(),
             torpedo_cooldown: 0,
             sonar_cooldown: 0,
+            last_sonar_sector: 0,
         }
     }
 
@@ -646,10 +648,14 @@ impl Me {
     }
 
     fn register_actions(&mut self, actions: &ActionSeq) {
-        if actions.contains(&Action::Surface) {
-            self.visited.clear()
+        for action in &actions[..] {
+            if let &Action::Surface = action {
+                self.visited.clear()
+            } else if let &Action::Sonar{sector} = action {
+                self.last_sonar_sector = sector
+            }
         }
-        // Move.device_charge is ack'd in the turn info (cooldowns)
+        // device dis/charges are ack'd in the turn info (cooldowns)
     }
 
     fn should_fire(&self, them: &Them, map: &Map) -> bool {
@@ -718,7 +724,7 @@ impl Them {
     // as in "narrowed down"
     fn is_position_narrow(&self) -> bool {
         1 < self.pos_candidates.len()
-            && self.pos_candidates.len() <= 5
+            && self.pos_candidates.len() <= 25
     }
 
     fn analyze_events(&mut self, events: Vec<TheirEvent>, map: &Map) {
@@ -732,7 +738,7 @@ impl Them {
                 TheirEvent::MySonar{sector, success} =>
                     self.analyze_my_sonar(*sector, *success, map),
             }
-            eprintln!("{:?}", self.pos_candidates)
+            eprintln!("{}: {:?}", self.pos_candidates.len(), self.pos_candidates)
         }
     }
 
@@ -795,14 +801,14 @@ impl Them {
                 |pos| ! map.belongs_to_sector(pos, sector)
             )
         }
-        // I should keep this in Them's history though, before the turn's action_seq.
     }
 
     fn sonar_potential(&self) -> f32 {
         // TODO: how much will pos_candidates decrease (candidates in sector_to_sonar)
         // NICE: bring Them.silence_cooldown into the fold
-        let is_good = self.is_position_tracked()
-            && self.is_position_known()
+        let is_good =
+            self.is_position_tracked()
+            && ! self.is_position_known()
             && self.is_position_narrow();
 
         if is_good { 1. }
@@ -869,13 +875,11 @@ impl Me {
         action_seq
     }
 
-    // FIXME: get the actual sector
     fn parse_sonar_result(&self, result: &str) -> Option<TheirEvent> {
         if result != "NA" {
             let success = result == "Y";
-            Some(TheirEvent::MySonar{ sector:/* me.last_sonar_sector() */ 1, success })
-        }
-        else {
+            Some(TheirEvent::MySonar{ sector: self.last_sonar_sector, success })
+        } else {
             None
         }
     }
