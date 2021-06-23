@@ -45,8 +45,6 @@ struct Me {
     last_sonar_sector: usize,
 }
 
-type CoordSet = HashSet<Coord>;
-
 struct Them {
     lives: usize,
     pos_candidates: Vec<Coord>,
@@ -98,6 +96,8 @@ struct Coord {
 }
 
 const DIRECTIONS: [char; 4] = ['N', 'E', 'S', 'W'];
+
+type CoordSet = HashSet<Coord>;
 
 enum Cell { Water, Land }
 
@@ -542,13 +542,16 @@ impl Map {
             && min_y <= pos.y && pos.y <= min_y + 4
     }
 
+    // cond: sector_id in [1,9]
     fn water_cells_from_sector(&self, sector_id: usize) -> Vec<Coord> {
         let (min_x, min_y) = self.sector_addr(sector_id);
         let cells_from_sector = Coord::range(min_x, min_x + 4, min_y, min_y + 4);
 
-        cells_from_sector.into_iter().filter(
-            |coord| self.cell_at(coord).is_water_cell()
-        ).collect()
+        cells_from_sector
+            .into_iter()
+            // if sector is correct, cells_from_sector are all within bounds
+            .filter(|coord| self.cell_at(coord).is_water_cell())
+            .collect()
     }
 
     // sectors numbered 1 to 9, 5x5 cells/sector, first horizontal then vertical
@@ -560,11 +563,21 @@ impl Map {
         (min_x, min_y)
     }
 
+    // cond: pos is within bounds
     fn sector_from(&self, pos: &Coord) -> usize {
         let vertical = pos.y / 5;
         let horizontal = pos.x / 5;
 
         vertical*3 + horizontal + 1
+    }
+
+    // water cells within "torpedo reach" of torpedo_target, minus the target /!\
+    fn area_of_effect(&self, torpedo_target: &Coord) -> CoordSet {
+        let unchecked_coords = torpedo_target.neighbors_with_diagonals();
+        unchecked_coords
+            .into_iter()
+            .filter(|coord| self.is_water(&coord))
+            .collect()
     }
 }
 
@@ -595,6 +608,18 @@ impl Coord {
 
             dist_a.partial_cmp(&dist_b).unwrap()
         });
+
+        neighbors
+    }
+
+    fn neighbors_with_diagonals(&self) -> Vec<Coord> {
+        let mut neighbors = self.neighbors();
+        neighbors.append(&mut vec![
+            Coord { x: self.x -1, y: self.y -1 },
+            Coord { x: self.x +1, y: self.y -1 },
+            Coord { x: self.x +1, y: self.y +1 },
+            Coord { x: self.x -1, y: self.y +1 }
+        ]);
 
         neighbors
     }
@@ -695,220 +720,6 @@ impl Me {
 
         them.sonar_score(&map) > 0.5
     }
-}
-
-impl Them {
-    fn new() -> Them {
-        Them {
-            lives: 0,
-            pos_candidates: Vec::new(),
-        }
-    }
-
-    fn ncandidates(&self) -> usize {
-        self.pos_candidates.len()
-    }
-
-    fn is_position_known(&self) -> bool {
-        self.ncandidates() == 1
-    }
-
-    #[allow(dead_code)]
-    // cond: position is known
-    fn position(&self) -> Coord {
-        self.pos_candidates[0].clone()
-    }
-
-    fn is_position_tracked(&self) -> bool {
-        self.ncandidates() != 0
-    }
-
-    // as in "narrowed down"
-    fn is_position_narrow(&self) -> bool {
-        1 < self.ncandidates()
-            && self.ncandidates() <= 25
-    }
-
-    fn analyze_events(&mut self, events: Vec<TheirEvent>, map: &Map) {
-        for event in &events {
-            match event {
-                TheirEvent::Move{dir} => self.analyze_move(*dir, map),
-                TheirEvent::Surface{sector} => self.analyze_surface(*sector, map),
-                TheirEvent::Torpedo{target} => self.analyze_torpedo(target, map),
-                TheirEvent::Sonar{sector: _} => (),
-                TheirEvent::Silence => self.analyze_silence(map),
-                TheirEvent::MySonar{sector, success} =>
-                    self.analyze_my_sonar(*sector, *success, map),
-            }
-            eprintln!("total:{} {:?}", self.ncandidates(), self.pos_candidates)
-        }
-    }
-
-    fn analyze_move(&mut self, dir: char, map: &Map) {
-        if self.is_position_tracked() {
-            self.pos_candidates =
-                self.pos_candidates.iter()
-                .filter_map(|pos| {
-                    if map.is_viable_move(pos, dir) {
-                        Some(pos.after_move(dir))
-                    } else { None }
-                })
-                .collect()
-        }
-    }
-
-    fn analyze_surface(&mut self, sector: usize, map: &Map) {
-        if ! self.is_position_tracked() {
-            self.pos_candidates = map.water_cells_from_sector(sector);
-        } else if ! self.is_position_known() {
-            self.pos_candidates.retain(
-                |pos| map.belongs_to_sector(pos, sector)
-            )
-        }
-    }
-
-    fn analyze_torpedo(&mut self, target: &Coord, map: &Map) {
-        if ! self.is_position_tracked() {
-            self.pos_candidates = map.cells_within_distance(&target, 4)
-        } else if ! self.is_position_known() {
-            self.pos_candidates.retain(
-                |pos| map.are_within_distance(pos, &target, 4)
-            )
-        }
-        // NICE: account for "you can also damage yourself with a torpedo"
-        //       note: torpedo affectation range includes diagonals
-    }
-
-    fn analyze_silence(&mut self, map: &Map) {
-        let max_sonar_dist = 4;
-        self.pos_candidates = self.pos_candidates.iter().flat_map(|pos| {
-            DIRECTIONS.iter().flat_map(move |&dir|
-                map.cells_along(&pos.clone(), dir, max_sonar_dist)
-                //TODO: trace_back (to discard visited)
-            ).chain(iter::once(pos.clone()))
-        }).collect();
-        self.pos_candidates.sort_unstable();
-        self.pos_candidates.dedup();
-    }
-
-    fn analyze_my_sonar(&mut self, sector: usize, success: bool, map: &Map) {
-        if success {
-            self.analyze_surface(sector, map)
-        } else if self.is_position_tracked() && ! self.is_position_known() {
-            self.pos_candidates.retain(
-                |pos| ! map.belongs_to_sector(pos, sector)
-            )
-        }
-    }
-
-    fn sonar_score(&self, map: &Map) -> f32 {
-        // NICE: bring Them.silence_cooldown into the fold
-        if ! self.is_position_tracked() ||  self.is_position_known() {
-            return 0.
-        }
-        let ncandidates = self.ncandidates();
-        let min_discarded = self.sonar_discrimination(&map);
-        let proportion = min_discarded as f32 / ncandidates as f32; // max = 0.5
-
-        let answer =
-            min_discarded != 0 && (
-                ncandidates < 10
-                || ncandidates < 25 && proportion > 0.2
-                || proportion > 0.4
-            );
-        if answer { 1. } else { 0. }
-    }
-
-    // cond: position is tracked
-    // lower bound on pos_candidates to be discarded
-    fn sonar_discrimination(&self, map: &Map) -> usize {
-        let (_sector, most_candidates) = self.sector_most_candidates(&map);
-        cmp::min(
-            most_candidates,
-            self.ncandidates() - most_candidates
-        )
-    }
-
-    // cond: position is tracked
-    // ret = (sector, number of candidates)
-    fn sector_most_candidates(&self, map: &Map) -> (usize, usize) {
-        let sectors =
-            self.pos_candidates
-            .iter()
-            .map(|pos| map.sector_from(pos));
-
-        let mut sector_counts = HashMap::new();
-        for sector in sectors {
-            let sector_count = sector_counts.entry(sector).or_insert(0);
-            *sector_count += 1;
-        }
-        let max =
-            sector_counts
-            .iter()
-            .max_by(|a, b| a.1.cmp(&b.1));
-
-        match max {
-            Some((&sector, &ncandidates)) => (sector, ncandidates),
-            None => panic!("Them::sector_most_candidates: used without position_is_tracked?")
-        }
-    }
-
-    // TODO: trace_back_candidate
-    /*fn trace_back_candidate
-    (
-        &self, event_i: usize, candidate: &Coord, visited: &mut Vec<CoordSet>
-    )
-    {
-        // need a termination condition on event_i. the latest Surface? origin?
-
-        for i in 0..visited.len() {
-            if ! self.analyze_backwards(event_i, &candidate, &mut visited[i]) {
-                // if this one doesn't check out, the next few neither
-                //  cause if visited.len() > 1, it comes from a Silence divergence
-                //  and if the i_th position of a Silence is invalid, then you can't reach the later ones
-                visited.truncate(i);
-                break
-            }
-        }
-
-        if ! visited.is_empty() {
-            let candidate_before = self.before_event(event_i, &candidate); // Coord.before_move() goes here
-            self.trace_back_candidate(event_i-1, candidate_before, visited)
-        }
-
-        // the final result of this recursion is visited itself (the presence or not of each element)
-        // in a Silence origin, visited is like DIRECTIONS.each_do [{pos}, {pos, pos+1} .. {pos .. pos+4}]
-        // for other origins (when position tracking begins?), visited.len = 1
-    }*/
-}
-
-impl Me {
-    fn next_actions(&self, global: &Global, them: &Them) -> ActionSeq {
-        let mut action_seq = ActionSeq::new();
-        let viable_moves = self.viable_moves(&global.map);
-        let have_to_surface = viable_moves.is_empty();
-        let should_sonar = self.should_sonar(&them, &global.map);
-
-        if have_to_surface {
-            action_seq.push(Action::Surface)
-        }
-        if let Some(target) = self.should_fire(&them, &global.map) {
-            action_seq.push(Action::Torpedo{target});
-        }
-        if !have_to_surface {
-            // TODO: better pathing, including Silence
-            let device = self.device_to_charge(them);
-            action_seq.push(
-                viable_moves[0].but_charge(device)
-            )
-        }
-        if should_sonar {
-            let (sector, _) = them.sector_most_candidates(&global.map);
-            action_seq.push(Action::Sonar { sector });
-        }
-
-        action_seq
-    }
 
     fn parse_sonar_result(&self, result: &str) -> Option<TheirEvent> {
         if result != "NA" {
@@ -978,6 +789,190 @@ impl Me {
 }
 
 impl Them {
+    fn new() -> Them {
+        Them {
+            lives: 0,
+            pos_candidates: Vec::new(),
+        }
+    }
+
+    fn ncandidates(&self) -> usize {
+        self.pos_candidates.len()
+    }
+
+    fn is_position_known(&self) -> bool {
+        self.ncandidates() == 1
+    }
+
+    #[allow(dead_code)]
+    // cond: position is known
+    fn position(&self) -> Coord {
+        self.pos_candidates[0].clone()
+    }
+
+    fn is_position_tracked(&self) -> bool {
+        self.ncandidates() != 0
+    }
+
+    // as in "narrowed down"
+    fn is_position_narrow(&self) -> bool {
+        1 < self.ncandidates()
+            && self.ncandidates() <= 25
+    }
+
+    fn analyze_events(&mut self, events: Vec<TheirEvent>, map: &Map) {
+        for event in &events {
+            match event {
+                TheirEvent::Move{dir} => self.analyze_move(*dir, map),
+                TheirEvent::Surface{sector} => self.analyze_surface(*sector, map),
+                TheirEvent::Torpedo{target} => self.analyze_torpedo(target, map),
+                TheirEvent::Sonar{sector: _} => (),
+                TheirEvent::Silence => self.analyze_silence(map),
+                TheirEvent::MySonar{sector, success} =>
+                    self.analyze_my_sonar(*sector, *success, map),
+            }
+            eprintln!("total:{} {:?}", self.ncandidates(), self.pos_candidates)
+        }
+    }
+
+    fn analyze_move(&mut self, dir: char, map: &Map) {
+        if self.is_position_tracked() {
+            self.pos_candidates =
+                self.pos_candidates
+                .iter()
+                .filter_map(|pos| {
+                    if map.is_viable_move(pos, dir) {
+                        Some(pos.after_move(dir))
+                    } else { None }
+                })
+                .collect()
+        }
+    }
+
+    fn analyze_surface(&mut self, sector: usize, map: &Map) {
+        if ! self.is_position_tracked() {
+            self.pos_candidates = map.water_cells_from_sector(sector);
+        } else if ! self.is_position_known() {
+            self.pos_candidates.retain(
+                |pos| map.belongs_to_sector(pos, sector)
+            )
+        }
+    }
+
+    fn analyze_torpedo(&mut self, target: &Coord, map: &Map) {
+        if ! self.is_position_tracked() {
+            self.pos_candidates = map.cells_within_distance(&target, 4)
+        } else if ! self.is_position_known() {
+            self.pos_candidates.retain(
+                |pos| map.are_within_distance(pos, &target, 4)
+            )
+        }
+        // NICE: account for "you can also damage yourself with a torpedo"
+        //       note: torpedo affectation range includes diagonals
+    }
+
+    fn analyze_silence(&mut self, map: &Map) {
+        let max_sonar_dist = 4;
+        self.pos_candidates = self.pos_candidates.iter().flat_map(|pos| {
+            DIRECTIONS.iter().flat_map(move |&dir|
+                map.cells_along(&pos.clone(), dir, max_sonar_dist)
+                //TODO: trace_back (to discard visited)
+            ).chain(iter::once(pos.clone()))
+        }).collect();
+        self.pos_candidates.sort_unstable();
+        self.pos_candidates.dedup();
+    }
+
+    fn analyze_my_sonar(&mut self, sector: usize, success: bool, map: &Map) {
+        if success {
+            self.analyze_surface(sector, map)
+        } else if self.is_position_tracked() && ! self.is_position_known() {
+            self.pos_candidates.retain(
+                |pos| ! map.belongs_to_sector(pos, sector)
+            )
+        }
+    }
+
+    // TODO: trace_back_candidate
+    /*fn trace_back_candidate
+    (
+        &self, event_i: usize, candidate: &Coord, visited: &mut Vec<CoordSet>
+    )
+    {
+        // need a termination condition on event_i. the latest Surface? origin?
+
+        for i in 0..visited.len() {
+            if ! self.analyze_backwards(event_i, &candidate, &mut visited[i]) {
+                // if this one doesn't check out, the next few neither
+                //  cause if visited.len() > 1, it comes from a Silence divergence
+                //  and if the i_th position of a Silence is invalid, then you can't reach the later ones
+                visited.truncate(i);
+                break
+            }
+        }
+
+        if ! visited.is_empty() {
+            let candidate_before = self.before_event(event_i, &candidate); // Coord.before_move() goes here
+            self.trace_back_candidate(event_i-1, candidate_before, visited)
+        }
+
+        // the final result of this recursion is visited itself (the presence or not of each element)
+        // in a Silence origin, visited is like DIRECTIONS.each_do [{pos}, {pos, pos+1} .. {pos .. pos+4}]
+        // for other origins (when position tracking begins?), visited.len = 1
+    }*/
+
+    fn sonar_score(&self, map: &Map) -> f32 {
+        // NICE: bring Them.silence_cooldown into the fold
+        if ! self.is_position_tracked() ||  self.is_position_known() {
+            return 0.
+        }
+        let ncandidates = self.ncandidates();
+        let min_discarded = self.sonar_discrimination(&map);
+        let proportion = min_discarded as f32 / ncandidates as f32; // max = 0.5
+
+        let answer =
+            min_discarded != 0 && (
+                ncandidates < 10
+                || ncandidates < 25 && proportion > 0.2
+                || proportion > 0.4
+            );
+        if answer { 1. } else { 0. }
+    }
+
+    // cond: position is tracked
+    // lower bound on pos_candidates to be discarded
+    fn sonar_discrimination(&self, map: &Map) -> usize {
+        let (_sector, most_candidates) = self.sector_most_candidates(&map);
+        cmp::min(
+            most_candidates,
+            self.ncandidates() - most_candidates
+        )
+    }
+
+    // cond: position is tracked
+    // ret = (sector, number of candidates)
+    fn sector_most_candidates(&self, map: &Map) -> (usize, usize) {
+        let sectors =
+            self.pos_candidates
+            .iter()
+            .map(|pos| map.sector_from(pos));
+
+        let mut sector_counts = HashMap::new();
+        for sector in sectors {
+            let sector_count = sector_counts.entry(sector).or_insert(0);
+            *sector_count += 1;
+        }
+        let max =
+            sector_counts
+            .iter()
+            .max_by(|a, b| a.1.cmp(&b.1));
+
+        match max {
+            Some((&sector, &ncandidates)) => (sector, ncandidates),
+            None => panic!("Them::sector_most_candidates: used without position_is_tracked?")
+        }
+    }
+
     // ret: (|affected candidates|, sum(damage))
     // sum(damage) cause they can lose 1-2 lives
     fn torpedo_impact(&self, target: &Coord, map: &Map) -> (usize, usize) {
@@ -996,27 +991,31 @@ impl Them {
     }
 }
 
-impl Map {
-    // water cells within "torpedo reach" of torpedo_target, minus the target (!)
-    fn area_of_effect(&self, torpedo_target: &Coord) -> CoordSet {
-        let unchecked_coords = torpedo_target.neighbors_with_diagonals();
-        unchecked_coords
-            .into_iter()
-            .filter(|coord| self.is_water(&coord))
-            .collect()
-    }
-}
+impl Me {
+    fn next_actions(&self, global: &Global, them: &Them) -> ActionSeq {
+        let mut action_seq = ActionSeq::new();
+        let viable_moves = self.viable_moves(&global.map);
+        let have_to_surface = viable_moves.is_empty();
+        let should_sonar = self.should_sonar(&them, &global.map);
 
-impl Coord {
-    fn neighbors_with_diagonals(&self) -> Vec<Coord> {
-        let mut neighbors = self.neighbors();
-        neighbors.append(&mut vec![
-            Coord { x: self.x -1, y: self.y -1 },
-            Coord { x: self.x +1, y: self.y -1 },
-            Coord { x: self.x +1, y: self.y +1 },
-            Coord { x: self.x -1, y: self.y +1 }
-        ]);
+        if have_to_surface {
+            action_seq.push(Action::Surface)
+        }
+        if let Some(target) = self.should_fire(&them, &global.map) {
+            action_seq.push(Action::Torpedo{target});
+        }
+        if !have_to_surface {
+            // TODO: better pathing, including Silence
+            let device = self.device_to_charge(them);
+            action_seq.push(
+                viable_moves[0].but_charge(device)
+            )
+        }
+        if should_sonar {
+            let (sector, _) = them.sector_most_candidates(&global.map);
+            action_seq.push(Action::Sonar { sector });
+        }
 
-        neighbors
+        action_seq
     }
 }
