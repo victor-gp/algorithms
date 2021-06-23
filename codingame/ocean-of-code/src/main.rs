@@ -571,12 +571,13 @@ impl Map {
         vertical*3 + horizontal + 1
     }
 
-    // water cells within "torpedo reach" of torpedo_target, minus the target /!\
+    // water cells impacted by a torpedo fired at torpedo_target
     fn area_of_effect(&self, torpedo_target: &Coord) -> CoordSet {
-        let unchecked_coords = torpedo_target.neighbors_with_diagonals();
-        unchecked_coords
+        torpedo_target
+            .neighbors_with_diagonals()
             .into_iter()
             .filter(|coord| self.is_water(&coord))
+            .chain(iter::once(torpedo_target.clone()))
             .collect()
     }
 }
@@ -940,7 +941,7 @@ impl Them {
     }
 
     // cond: position is tracked
-    // lower bound on pos_candidates to be discarded
+    // ret = lower bound on pos_candidates to be discarded
     fn sonar_discrimination(&self, map: &Map) -> usize {
         let (_sector, most_candidates) = self.sector_most_candidates(&map);
         cmp::min(
@@ -981,13 +982,14 @@ impl Them {
             area_of_effect
             .iter()
             .filter_map(|pos| {
-                if pos == target { Some(2) }
-                else if self.pos_candidates.contains(&pos) { Some(1) }
+                if self.pos_candidates.contains(&pos) { Some(1) }
                 else { None }
             })
             .collect();
+        let mut damages_sum = damages.iter().sum();
+        if self.pos_candidates.contains(&target) { damages_sum += 1 }
 
-        (damages.len(), damages.iter().sum())
+        (damages.len(), damages_sum)
     }
 }
 
