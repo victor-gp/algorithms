@@ -74,9 +74,9 @@ enum TheirEvent {
     Sonar { sector: usize },
     Silence,
     MySonar { sector: usize, success: bool },
-    // LifeLoss { usize: lives },
-    // Found { pos: Coord },
-    //  alt: Divergence { pre_candidates } if at every Silence
+    // MyTorpedo { target: Coord } at beginning of turn,
+    // LifeLoss { usize: lives, torpedo_targets: Vec<Coord> } at end of turn,
+    // SilenceDivergence { pre_candidates } at/replacing every Silence,
 }
 
 struct ActionSeq(Vec<Action>);
@@ -450,6 +450,7 @@ impl Map {
 
     // TODO: try to precalculate all distances at Map::new() time
     // cond: a, b are coords to water cells
+    #[allow(dead_code)]
     fn distance(&self, a: &Coord, b: &Coord) -> Option<usize> {
         let mut visited = vec![vec![false; self.width]; self.height];
         self._distance(a, b, &mut visited)
@@ -669,17 +670,6 @@ impl Me {
         // device dis/charges are ack'd in the turn info (cooldowns)
     }
 
-    fn should_fire(&self, them: &Them, map: &Map) -> bool {
-        self.torpedo_cooldown == 0
-            && them.is_position_known()
-            && match map.distance(&self.pos, &them.position()) {
-                // torpedo impact area = target + 1 including diagonals
-                // torpedo range = 4
-                Some(distance) => 2 <= distance && distance <= 4,
-                None => false
-            }
-    }
-
     fn device_to_charge(&self, them: &Them) -> &'static str {
         let sonar_discharged = self.sonar_cooldown > 0;
         let torpedo_discharged = self.torpedo_cooldown > 0;
@@ -723,6 +713,7 @@ impl Them {
         self.ncandidates() == 1
     }
 
+    #[allow(dead_code)]
     // cond: position is known
     fn position(&self) -> Coord {
         self.pos_candidates[0].clone()
@@ -896,24 +887,13 @@ impl Me {
         let mut action_seq = ActionSeq::new();
         let viable_moves = self.viable_moves(&global.map);
         let have_to_surface = viable_moves.is_empty();
-        let should_fire = self.should_fire(&them, &global.map);
         let should_sonar = self.should_sonar(&them, &global.map);
 
         if have_to_surface {
             action_seq.push(Action::Surface)
         }
-        /*if may_fire {
-            let possible_torpedoes = Action.torpedoes_impacting(&them.position());
-            let combinations = ActionSeq.viable_combinations(&viable_moves, &possible_torpedoes, &self, &global.map);
-            let scores = combinations.iter().map(|&c| c.score());
-            // score params: my_lives, their_lives, my_pos
-
-            let (index, max_score) = scores.enumerate().max_by(|&(_, score)| score);
-            action_seq.push(combinations[index])
-
-        }*/
-        if should_fire {
-            action_seq.push(Action::Torpedo{ target: them.position() });
+        if let Some(target) = self.should_fire(&them, &global.map) {
+            action_seq.push(Action::Torpedo{target});
         }
         if !have_to_surface {
             // TODO: better pathing, including Silence
@@ -937,5 +917,106 @@ impl Me {
         } else {
             None
         }
+    }
+
+    // TODO: play with combinations of Move + Torpedo
+    fn should_fire(&self, them: &Them, map: &Map) -> Option<Coord> {
+        if self.torpedo_cooldown > 0 { return None }
+        let max_possible_aoe = 8; // a torpedo may reach at most 8 cells
+        if them.ncandidates() > 3*max_possible_aoe { return None }
+
+        let (target, score) = self.best_shot(them, map);
+        if score > 0.5 {
+            Some(target)
+        } else {
+            None
+        }
+    }
+
+    fn best_shot(&self, them: &Them, map: &Map) -> (Coord, f32) {
+        let targets = map.cells_within_distance(&self.pos, 4);
+        let impacts = targets.iter().map(|target| them.torpedo_impact(target, &map));
+        let mut scores = Vec::new();
+        for (i, (naffected, damage_sum)) in impacts.enumerate() {
+            let my_damage = self.torpedo_damage(&targets[i], map);
+            scores.push(
+                Self::torpedo_score(them.ncandidates(), naffected, damage_sum, my_damage)
+            )
+        }
+
+        targets
+            .into_iter()
+            .zip(scores.into_iter())
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .unwrap()
+    }
+
+    fn torpedo_damage(&self, target: &Coord, map: &Map) -> usize {
+        if *target == self.pos { 2 }
+        else if map.area_of_effect(&target).contains(&self.pos) { 1 }
+        else { 0 }
+    }
+
+    // TODO: fine tune torpedo_score
+    fn torpedo_score(
+        ncandidates: usize, naffected: usize, damage_sum: usize, my_damage: usize
+    ) -> f32
+    {
+        let avg_candidates_dmg = damage_sum as f32 / ncandidates as f32;
+        let _avg_affected_dmg = damage_sum as f32 / naffected as f32;
+        let my_dmg = my_damage as f32;
+
+        if damage_sum == 0 { 0. }
+        else if avg_candidates_dmg == 2. { 1. } // known_position && position == target
+        else if avg_candidates_dmg > 0.6 && avg_candidates_dmg > my_dmg {
+            0.7
+        }
+        else {
+            0.
+        }
+    }
+}
+
+impl Them {
+    // ret: (|affected candidates|, sum(damage))
+    // sum(damage) cause they can lose 1-2 lives
+    fn torpedo_impact(&self, target: &Coord, map: &Map) -> (usize, usize) {
+        let area_of_effect = map.area_of_effect(&target);
+        let damages: Vec<usize> =
+            area_of_effect
+            .iter()
+            .filter_map(|pos| {
+                if pos == target { Some(2) }
+                else if self.pos_candidates.contains(&pos) { Some(1) }
+                else { None }
+            })
+            .collect();
+
+        (damages.len(), damages.iter().sum())
+    }
+}
+
+impl Map {
+    // water cells within "torpedo reach" of torpedo_target, minus the target (!)
+    fn area_of_effect(&self, torpedo_target: &Coord) -> CoordSet {
+        let unchecked_coords = torpedo_target.neighbors_with_diagonals();
+        unchecked_coords
+            .into_iter()
+            .filter(|coord| self.is_water(&coord))
+            .collect()
+    }
+}
+
+impl Coord {
+    fn neighbors_with_diagonals(&self) -> Vec<Coord> {
+        let mut neighbors = self.neighbors();
+        neighbors.append(&mut vec![
+            Coord { x: self.x -1, y: self.y -1 },
+            Coord { x: self.x +1, y: self.y -1 },
+            Coord { x: self.x +1, y: self.y +1 },
+            Coord { x: self.x -1, y: self.y +1 }
+        ]);
+
+        neighbors
     }
 }
