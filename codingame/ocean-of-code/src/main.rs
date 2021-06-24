@@ -495,8 +495,9 @@ impl Map {
             // max possible number of cells within this distance of pos
             (distance+1).pow(2) + distance.pow(2)
         );
-        cells.push(pos.clone());
         // BFS
+        cells.push(pos.clone());
+        let mut pre2_iter_start = 0;
         let mut pre_iter_start = 0;
         for _ in 1..=distance {
             let mut new_neighbors = Vec::with_capacity(
@@ -506,14 +507,15 @@ impl Map {
             );
             for pos in &cells[pre_iter_start..] {
                 let neighbors = pos.neighbors().into_iter().filter(|coord| {
-                    self.is_water(coord) && ! cells[pre_iter_start..].contains(coord)
+                    self.is_water(coord) && ! cells[pre2_iter_start..].contains(coord)
                 });
                 for neighbor in neighbors {
                     if ! new_neighbors.contains(&neighbor) {
-                            new_neighbors.push(neighbor)
+                        new_neighbors.push(neighbor)
                     }
                 }
             }
+            pre2_iter_start = pre_iter_start;
             pre_iter_start = cells.len();
             cells.append(&mut new_neighbors);
         }
@@ -699,7 +701,8 @@ impl Me {
     fn device_to_charge(&self, them: &Them) -> &'static str {
         let sonar_discharged = self.sonar_cooldown > 0;
         let torpedo_discharged = self.torpedo_cooldown > 0;
-        // NICE: consider the CD amount
+        // TODO: if we're close, Torpedo or Silence (prioritize by charges to ready)
+        //       or just use best_shot().score and sonar_score() as if they were off CD?
         // NICE: take into account the CDs after the incoming action_seq
 
         if ! sonar_discharged {
@@ -708,6 +711,7 @@ impl Me {
         else if ! torpedo_discharged {
             SONAR
         }
+        // FIXME: this charges Sonar when position is known...
         else if them.is_position_narrow() { // NICE: && are we close enough?
             TORPEDO
         }
@@ -734,11 +738,11 @@ impl Me {
     // TODO: play with combinations of Move + Torpedo
     fn should_fire(&self, them: &Them, map: &Map) -> Option<Coord> {
         if self.torpedo_cooldown > 0 { return None }
-        let max_possible_aoe = 8; // a torpedo may reach at most 8 cells
-        if them.ncandidates() > 3*max_possible_aoe { return None }
+        // see Me::torpedo_score for an explanation on this magic number
+        if !them.is_position_tracked() || them.ncandidates() > 12 { return None }
 
         let (target, score) = self.best_shot(them, map);
-        if score > 0.5 {
+        if score > 29. {
             Some(target)
         } else {
             None
@@ -751,9 +755,10 @@ impl Me {
         let mut scores = Vec::new();
         for (i, (naffected, damage_sum)) in impacts.enumerate() {
             let my_damage = self.torpedo_damage(&targets[i], map);
-            scores.push(
-                Self::torpedo_score(them.ncandidates(), naffected, damage_sum, my_damage)
-            )
+            let distance_from_me = map.distance(&self.pos, &targets[i]).unwrap();
+            scores.push(Self::torpedo_score(
+                them.ncandidates(), naffected, damage_sum, my_damage, distance_from_me
+            ))
         }
 
         targets
@@ -769,23 +774,36 @@ impl Me {
         else { 0 }
     }
 
-    // TODO: fine tune torpedo_score
     fn torpedo_score(
-        ncandidates: usize, naffected: usize, damage_sum: usize, my_damage: usize
-    ) -> f32
+        ncandidates: usize, naffected: usize, damage_sum: usize,
+        my_damage: usize, distance_from_me: usize
+    ) -> f32 // should be usize instead?
     {
         let avg_candidates_dmg = damage_sum as f32 / ncandidates as f32;
-        let _avg_affected_dmg = damage_sum as f32 / naffected as f32;
+        // max possible naffected = 9;
+        let naffected_proportion =  naffected as f32 / 9.;
         let my_dmg = my_damage as f32;
+        let dmg_difference = avg_candidates_dmg - my_dmg;
 
-        if damage_sum == 0 { 0. }
-        else if avg_candidates_dmg == 2. { 1. } // known_position && position == target
-        else if avg_candidates_dmg > 0.6 && avg_candidates_dmg > my_dmg {
-            0.7
+        let mut score = 0.;
+        let mut weigh = |weight| score += weight;
+
+        // should I be more careful with float comparisons?
+        if avg_candidates_dmg <= my_dmg  { weigh(-100.) }
+        // known_position && position == target, so avg_damage ~= 2.0
+        else if avg_candidates_dmg > 1.95 { weigh(100.) }
+        // NICE: revise this. I'm requiring (8+1*2)/12 affected, or 4/5
+        //       perhaps ncandidates should be sqrted in that division...
+        //       in the meantime, I'm changing to 12 the ncandidates cutoff in Me::should_torpedo.
+        else if avg_candidates_dmg > 0.8 && dmg_difference > 0.3 {
+            let avg_dmg_weight = 20. + 30.*((avg_candidates_dmg-0.8) / (2.0-0.8));
+            let naffected_weight = 10. + 20.*(naffected_proportion);
+            weigh(avg_dmg_weight + naffected_weight);
         }
-        else {
-            0.
-        }
+        weigh(distance_from_me as f32 / 4.); // range: [0,1]
+        // NICE: wait if I can narrow it down (Sonar available, their Silence on CD, etc.)
+
+        score
     }
 }
 
@@ -832,8 +850,9 @@ impl Them {
                 TheirEvent::MySonar{sector, success} =>
                     self.analyze_my_sonar(*sector, *success, map),
             }
-            eprintln!("total:{} {:?}", self.ncandidates(), self.pos_candidates)
         }
+        self.pos_candidates.sort_unstable();
+        eprintln!("total:{} {:?}", self.ncandidates(), self.pos_candidates);
     }
 
     fn analyze_move(&mut self, dir: char, map: &Map) {
