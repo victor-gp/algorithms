@@ -52,7 +52,7 @@ struct Them {
     // cooldowns
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 enum Action {
     Move { dir: char, charge_device: &'static str },
     Surface,
@@ -398,6 +398,15 @@ impl Action {
             panic!("used Action::but_charge on \"{}\", should be a Move", self)
         }
     }
+
+    // assumes that self is a valid move from current_pos
+    fn destination(&self, current_pos: &Coord) -> Coord {
+        match self {
+            Action::Move{ dir, charge_device: _ } => current_pos.after_move(*dir),
+            // Action::Silence ...
+            _ => panic!("Action::destination: not a displacement action, \"{:?}\"", &self)
+        }
+    }
 }
 
 impl ActionSeq {
@@ -674,19 +683,6 @@ impl Me {
         }
     }
 
-    fn viable_moves(&self, map: &Map) -> Vec<Action> {
-        // Coord.neighbors() uses the same order as DIRECTIONS
-        let destinations = self.pos.neighbors();
-
-        DIRECTIONS.iter().zip(destinations).filter_map(|dir_dest| {
-            let (&dir, dest) = dir_dest;
-            if map.is_water(&dest) && ! self.visited.contains(&dest) {
-                Some(Action::new_move(dir))
-            }
-            else { None }
-        }).collect()
-    }
-
     fn register_actions(&mut self, actions: &ActionSeq) {
         for action in &actions[..] {
             if let &Action::Surface = action {
@@ -696,6 +692,88 @@ impl Me {
             }
         }
         // device dis/charges are ack'd in the turn info (cooldowns)
+    }
+
+    // None if no viable moves, otherwise any with None/max moves_to_surface
+    fn best_move(&self, map: &Map) -> Option<Action> {
+        // TODO: Silence as an alternative to Move
+        let viable_moves = self.viable_moves(&map);
+        let moves_to_surface: Vec<Option<usize>> =
+            viable_moves
+            .iter()
+            .map(|_move| {
+                let dest = &_move.destination(&self.pos);
+                let mut newly_visited = CoordSet::new();
+                // TODO: perhaps I should add me.pos into me.visited before me.next_actions()?
+                newly_visited.insert(self.pos.clone());
+
+                self.moves_to_surface(map, dest, &mut newly_visited, 3)
+            })
+            .collect();
+
+        if let Some((far_surface_move, _)) =
+            viable_moves
+            .iter()
+            .zip(moves_to_surface.iter())
+            .find(|(_,mts)| matches!(mts, None))
+        {
+            let owned_move = (*far_surface_move).clone();
+            return Some(owned_move)
+        }
+
+        let moves_to_surface_unwrapped = moves_to_surface.iter().map(|opt| opt.unwrap());
+        viable_moves
+            .into_iter()
+            .zip(moves_to_surface_unwrapped)
+            .max_by(|a,b| a.1.cmp(&b.1))
+            .map(|(m, _mts)| m)
+    }
+
+    fn viable_moves(&self, map: &Map) -> Vec<Action> {
+        // Coord.neighbors() uses the same order as DIRECTIONS
+        let destinations = self.pos.neighbors();
+
+        DIRECTIONS
+            .iter()
+            .zip(destinations)
+            .filter_map(|(&dir, dest)| {
+                if map.is_water(&dest) && ! self.visited.contains(&dest) {
+                    Some(Action::new_move(dir))
+                }
+                else { None }
+            })
+            .collect()
+    }
+
+    // (DFS) from pos, how many moves (+1) until I have to surface, None if > search_depth
+    fn moves_to_surface(
+        &self, map: &Map, pos: &Coord, newly_visited: &mut CoordSet, search_depth: usize
+    ) -> Option<usize>
+    {
+        if search_depth == 0 { return None }
+
+        newly_visited.insert(pos.clone());
+        let mut max_moves_to_surface = 0;
+        for neighbor in pos.neighbors() {
+            if ! map.is_water(&neighbor) { continue }
+            if self.visited.contains(&neighbor)
+                || newly_visited.contains(&neighbor) { continue }
+
+            let from_neighbor = self.moves_to_surface(
+                map, &neighbor, newly_visited, search_depth-1
+            );
+            if let Some(moves_to_surface) = from_neighbor {
+                if moves_to_surface > max_moves_to_surface {
+                    max_moves_to_surface = moves_to_surface;
+                }
+            } else {
+                newly_visited.remove(&pos);
+                return None
+            }
+        }
+        newly_visited.remove(&pos);
+
+        Some(max_moves_to_surface +1)
     }
 
     fn device_to_charge(&self, them: &Them) -> &'static str {
@@ -1015,8 +1093,8 @@ impl Them {
 impl Me {
     fn next_actions(&self, global: &Global, them: &Them) -> ActionSeq {
         let mut action_seq = ActionSeq::new();
-        let viable_moves = self.viable_moves(&global.map);
-        let have_to_surface = viable_moves.is_empty();
+        let best_move = self.best_move(&global.map);
+        let have_to_surface = matches!(best_move, None);
         let should_sonar = self.should_sonar(&them, &global.map);
 
         if have_to_surface {
@@ -1026,11 +1104,9 @@ impl Me {
             action_seq.push(Action::Torpedo{target});
         }
         if !have_to_surface {
-            // TODO: better pathing, including Silence
+            let _move = best_move.unwrap();
             let device = self.device_to_charge(them);
-            action_seq.push(
-                viable_moves[0].but_charge(device)
-            )
+            action_seq.push(_move.but_charge(device));
         }
         if should_sonar {
             let (sector, _) = them.sector_most_candidates(&global.map);
