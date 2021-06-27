@@ -83,7 +83,7 @@ struct Map {
     water: Vec<Coord>,
 }
 
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 // agnostic of Map, doesnt't care about bounds or Water/Land
 struct Coord {
     x: usize,
@@ -440,7 +440,7 @@ impl Action {
     // assumes that self is a valid move from current_pos
     fn destination(&self, current_pos: &Coord) -> Coord {
         match self {
-            Action::Move{ dir, charge_device: _ } => current_pos.after_move(*dir),
+            Action::Move{ dir, charge_device: _ } => *current_pos + *dir,
             // Action::Silence ...
             _ => panic!("Action::destination: not a displacement action, \"{:?}\"", &self)
         }
@@ -484,7 +484,7 @@ impl Map {
     }
 
     fn is_viable_move(&self, pos: &Coord, dir: char) -> bool {
-        let dest = pos.after_move(dir);
+        let dest = *pos + dir;
         self.is_water(&dest)
     }
 
@@ -580,7 +580,7 @@ impl Map {
     fn cells_along(&self, pos: &Coord, dir: char, n: usize) -> Vec<Coord> {
         if n == 0 { return Vec::new() }
 
-        let next = pos.after_move(dir);
+        let next = *pos + dir;
         if self.is_water(&next) {
             let mut ret = self.cells_along(&next, dir, n-1);
             ret.insert(0, next);
@@ -636,21 +636,32 @@ impl Map {
     }
 }
 
+use std::ops::Add;
+
+impl Add<char> for Coord {
+    type Output = Coord;
+
+    fn add(self, other: char) -> Self::Output {
+        self.after_move(other)
+    }
+}
+
 impl Coord {
-    fn after_move(&self, dir: char) -> Coord {
+    fn after_move(mut self, dir: char) -> Coord {
         match dir {
-            'N' => Coord { y: self.y - 1, ..*self },
-            'E' => Coord { x: self.x + 1, ..*self },
-            'S' => Coord { y: self.y + 1, ..*self },
-            'W' => Coord { x: self.x - 1, ..*self },
+            'N' => self.y -= 1,
+            'E' => self.x += 1,
+            'S' => self.y += 1,
+            'W' => self.x -= 1,
             _ => panic!("Coord::after_move(): not a direction char?")
         }
+        self
     }
 
     fn neighbors(&self) -> Vec<Coord> {
         DIRECTIONS
             .iter()
-            .map(|&dir| self.after_move(dir))
+            .map(|&dir| *self + dir)
             .collect()
     }
 
@@ -984,8 +995,10 @@ impl Them {
                 .iter()
                 .filter_map(|pos| {
                     if map.is_viable_move(pos, dir) {
-                        Some(pos.after_move(dir))
-                    } else { None }
+                        Some(*pos + dir)
+                    } else {
+                        None
+                    }
                 })
                 .collect()
         }
