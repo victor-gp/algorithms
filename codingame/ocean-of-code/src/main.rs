@@ -162,10 +162,8 @@ fn read_turn_info(global: &Global, me: &mut Me, them: &mut Them) {
     io::stdin().read_line(&mut input_line).unwrap();
     let opponent_orders = input_line.trim_matches('\n').to_string();
 
-    if global.turn > 2 {
-        me.visited.insert(me.pos.clone());
-    }
     me.pos = Coord{x, y};
+    me.visited.insert(me.pos);
     me.lives = my_life;
     them.lives = opp_life;
     me.torpedo_cooldown = torpedo_cooldown;
@@ -757,11 +755,7 @@ impl Me {
             .iter()
             .map(|_move| {
                 let dest = &_move.destination(&self.pos);
-                let mut newly_visited = CoordSet::new();
-                // TODO: perhaps I should add me.pos into me.visited before me.next_actions()?
-                newly_visited.insert(self.pos.clone());
-
-                self.moves_to_surface(map, dest, &mut newly_visited, 3)
+                self.moves_to_surface(map, dest, &mut CoordSet::new(), 3)
             })
             .collect();
 
@@ -827,6 +821,7 @@ impl Me {
         }
         newly_visited.remove(&pos);
 
+        // starts the count at 1, rather than 0, out of convenience
         Some(max_moves_to_surface +1)
     }
 
