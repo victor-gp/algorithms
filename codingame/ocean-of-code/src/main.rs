@@ -90,8 +90,6 @@ struct Coord {
     y: usize
 }
 
-const DIRECTIONS: [char; 4] = ['N', 'E', 'S', 'W'];
-
 type CoordSet = HashSet<Coord>;
 
 enum Cell { Water, Land }
@@ -499,7 +497,7 @@ impl Map {
         }).collect::<Vec<Coord>>()
     }
 
-    // TODO: try to precalculate all distances at Map::new() time
+    // NICE: try to precalculate all distances at Map::new() time / yagni?
     // cond: a, b are coords to water cells
     fn distance(&self, a: &Coord, b: &Coord) -> Option<usize> {
         let mut visited = vec![vec![false; self.width]; self.height];
@@ -645,6 +643,8 @@ impl Add<char> for Coord {
 }
 
 impl Coord {
+    const DIRECTIONS: [char; 4] = ['N', 'E', 'S', 'W'];
+
     fn after_move(mut self, dir: char) -> Coord {
         match dir {
             'N' => self.y -= 1,
@@ -657,7 +657,7 @@ impl Coord {
     }
 
     fn neighbors(&self) -> Vec<Coord> {
-        DIRECTIONS
+        Coord::DIRECTIONS
             .iter()
             .map(|&dir| *self + dir)
             .collect()
@@ -781,7 +781,7 @@ impl Me {
         // Coord.neighbors() uses the same order as DIRECTIONS
         let destinations = self.pos.neighbors();
 
-        DIRECTIONS
+        Coord::DIRECTIONS
             .iter()
             .zip(destinations)
             .filter_map(|(&dir, dest)| {
@@ -1024,7 +1024,7 @@ impl Them {
     fn analyze_silence(&mut self, map: &Map) {
         let max_sonar_dist = 4;
         self.pos_candidates = self.pos_candidates.iter().flat_map(|pos| {
-            DIRECTIONS.iter().flat_map(move |&dir|
+            Coord::DIRECTIONS.iter().flat_map(move |&dir|
                 map.cells_along(&pos.clone(), dir, max_sonar_dist)
                 //TODO: trace_back (to discard visited)
             ).chain(iter::once(pos.clone()))
