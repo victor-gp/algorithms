@@ -55,6 +55,14 @@ Sonar requires 4 charge actions to load. It allows you to check, if the opponent
 
 Silence requires 6 charge actions to load. This allows you to move 0 to 4 cells in a given direction (not visiting already visited cells or islands). Your opponent will not know in which direction or how far you've moved.
 
+#### Mine
+
+Mine requires 3 charge actions to load. It can be placed on any cell next to you (north, east, south, west). You can't place two own mines on the same cell. However it's possible to place your own mine on an opponent mine or the opponent's submarine itself. Mines will only detonate when using the trigger command, not when moving onto them.
+
+#### Trigger
+
+Triggering a mine will cause an explosion. You can only trigger your own mines. Like for a torpedo, the explosion has a damage of 2 on the location of the mine and 1 damage to nearby cells (including diagonally). You can't trigger multiple mines in the same turn. You can't place and trigger a mine in the same turn. You can also damage yourself with a mine.
+
 The following table shows, how different actions will be shown to your opponent:
 
 | Your action      | Shown to opponent | comment                                                                                                                        |
@@ -64,6 +72,8 @@ The following table shows, how different actions will be shown to your opponent:
 | `TORPEDO 3 5`    | `TORPEDO 3 5`     | The opponent will see, that you fired a torpedo at the cell (3,5)                                                              |
 | `SONAR 4`        | `SONAR 4`         | The opponent will see, that you used a sonar on sector 4. You will receive the sonar result (Y/N for yes/no) in the next turn. |
 | `SILENCE N 4`    | `SILENCE`         | The opponent will see, that you moved silently - but not where or how far                                                      |
+| `MINE E`         | `MINE`            | The opponent will see, that you placed a mine - but not in which direction                                                     |
+| `TRIGGER 3 5`    | `TRIGGER 3 5`     | The opponent will see, that you trigger a mine at cell (3,5)                                                                   |
 
 ### Victory Conditions
 
@@ -129,6 +139,8 @@ e.g.: `MOVE N TORPEDO | TORPEDO 3 5` These commands move your submarine to the n
 - `TORPEDO X Y`
 - `SONAR sector`
 - `SILENCE direction distance`
+- `MINE direction`
+- `TRIGGER X Y`
 - `MSG message`
 
 ### Constraints

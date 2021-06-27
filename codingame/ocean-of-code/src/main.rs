@@ -56,7 +56,7 @@ enum Action {
     Surface,
     Torpedo { target: Coord },
     Sonar { sector: usize },
-    // TODO: SILENCE
+    // TODO: SILENCE, MINE, TRIGGER
 }
 
 enum Event {
@@ -69,6 +69,7 @@ enum Event {
     // MyTorpedo { target: Coord } at beginning of turn,
     // LifeLoss { usize: lives, torpedo_targets: Vec<Coord> } at end of turn,
     // SilenceDivergence { pre_candidates } at/replacing every Silence,
+    // Mine { pre_candidates } + Trigger { target: Coord }
 }
 
 struct ActionSeq(Vec<Action>);
@@ -155,7 +156,7 @@ fn read_turn_info(global: &Global, me: &mut Me, them: &mut Them) {
     let torpedo_cooldown = parse_input!(inputs[4], usize);
     let sonar_cooldown = parse_input!(inputs[5], usize);
     let silence_cooldown = parse_input!(inputs[6], usize);
-    let mine_cooldown = parse_input!(inputs[7], i32);
+    let mine_cooldown = parse_input!(inputs[7], usize);
     let mut input_line = String::new();
     io::stdin().read_line(&mut input_line).unwrap();
     let sonar_result = input_line.trim().to_string();
