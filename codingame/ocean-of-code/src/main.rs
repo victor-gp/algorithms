@@ -61,10 +61,6 @@ enum Action {
     // TODO: SILENCE
 }
 
-// devices for Action::Move.charge_device
-const TORPEDO: &str = "TORPEDO";
-const SONAR: &str = "SONAR";
-
 enum Event {
     Move { dir: char },
     Surface { sector: usize },
@@ -425,7 +421,7 @@ impl Timer {
 
 impl Action {
     fn new_move(dir: char) -> Action {
-        Action::Move { dir , charge_device: TORPEDO }
+        Action::Move { dir , charge_device: Action::TORPEDO }
     }
 
     fn but_charge(&self, device: &'static str) -> Action {
@@ -436,6 +432,10 @@ impl Action {
             panic!("used Action::but_charge on \"{}\", should be a Move", self)
         }
     }
+
+    // devices for Action::Move.charge_device
+    const TORPEDO: &'static str = "TORPEDO";
+    const SONAR: &'static str = "SONAR";
 
     // assumes that self is a valid move from current_pos
     fn destination(&self, current_pos: &Coord) -> Coord {
@@ -827,17 +827,17 @@ impl Me {
         // NICE: take into account the CDs after the incoming action_seq
 
         if ! sonar_discharged {
-            TORPEDO
+            Action::TORPEDO
         }
         else if ! torpedo_discharged {
-            SONAR
+            Action::SONAR
         }
         // FIXME: this charges Sonar when position is known...
         else if them.is_position_narrow() { // NICE: && are we close enough?
-            TORPEDO
+            Action::TORPEDO
         }
         else {
-            SONAR
+            Action::SONAR
         }
     }
 
