@@ -48,7 +48,7 @@ struct Me {
 struct Them {
     lives: usize,
     pos_candidates: Vec<Coord>,
-    // event_history: Vec<TheirEvent>,
+    // event_history: Vec<EventSeq>, // an EventSeq for every turn
     // cooldowns
 }
 
@@ -65,7 +65,7 @@ enum Action {
 const TORPEDO: &str = "TORPEDO";
 const SONAR: &str = "SONAR";
 
-enum TheirEvent {
+enum Event {
     Move { dir: char },
     Surface { sector: usize },
     Torpedo { target: Coord },
@@ -78,8 +78,7 @@ enum TheirEvent {
 }
 
 struct ActionSeq(Vec<Action>);
-// NICE: make this a generic type to contain both action types (mainly for IO purposes)
-//       with an IOAction trait (Display, Debug, from_str) implemented by the two types
+struct EventSeq(Vec<Event>);
 
 struct Map {
     width: usize,
@@ -178,9 +177,9 @@ fn read_turn_info(global: &Global, me: &mut Me, them: &mut Them) {
     me.sonar_cooldown = sonar_cooldown;
 
     if global.turn > 2 || ! global.me_first {
-        let mut their_events = TheirEvent::action_seq_from_str(&opponent_orders);
+        let mut their_events = EventSeq::from_str(&opponent_orders);
         if let Some(sonar_event) = me.parse_sonar_result(&sonar_result) {
-            their_events.insert(0, sonar_event)
+            their_events.prepend(sonar_event);
         }
         them.analyze_events(their_events, &global.map);
     }
@@ -260,7 +259,7 @@ impl fmt::Debug for Action {
     }
 }
 
-impl fmt::Debug for TheirEvent {
+impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Move{dir} => write!(f, "MOVE {}", dir),
@@ -288,6 +287,20 @@ impl DerefMut for ActionSeq {
     }
 }
 
+impl Deref for EventSeq {
+    type Target = Vec<Event>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for EventSeq {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 // NICE: try adversarial output (whitespace, inCoNsISteNt cASE)
 impl fmt::Display for ActionSeq {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -305,8 +318,8 @@ impl fmt::Debug for ActionSeq {
     }
 }
 
-impl TheirEvent {
-    fn from_action_str(s: &str) -> Option<Self> {
+impl Event {
+    fn from_str(s: &str) -> Option<Self> {
         let mut tokens = s.split_whitespace();
         let token = tokens.next()?;
         match token {
@@ -329,28 +342,34 @@ impl TheirEvent {
             },
             "SILENCE" => Some( Self::Silence ),
             _ => {
-                eprintln!("TheirEvent::from_str: could not parse string \"{}\"", s);
+                eprintln!("Event::from_str: could not parse string \"{}\"", s);
                 None
             }
         }
     }
+}
 
-    fn action_seq_from_str(action_seq: &str) -> Vec<Self> {
-        action_seq
+impl EventSeq {
+    fn from_str(event_seq_str: &str) -> EventSeq {
+        EventSeq(
+            event_seq_str
             .split("|")
-            .filter_map(|s| Self::from_action_str(s))
+            .filter_map(|s| Event::from_str(s))
             .collect()
+        )
     }
 
     #[allow(dead_code)]
-    fn string_from_seq(event_seq: Vec<Self>) -> String {
-        event_seq
+    fn string_from_seq(&self) -> String {
+        self
             .iter()
-            .map(|action| {format!("{:?}", action)})
+            .map(|event| {format!("{:?}", event)})
             .collect::<Vec<String>>()
             .join("|")
     }
 }
+
+
 
 impl Timer {
     fn new() -> Timer {
@@ -412,6 +431,12 @@ impl Action {
 impl ActionSeq {
     fn new() -> Self {
         ActionSeq(Vec::new())
+    }
+}
+
+impl EventSeq {
+    fn prepend(&mut self, event: Event) {
+        self.insert(0, event);
     }
 }
 
@@ -804,10 +829,10 @@ impl Me {
         them.sonar_score(&map) > 0.5
     }
 
-    fn parse_sonar_result(&self, result: &str) -> Option<TheirEvent> {
+    fn parse_sonar_result(&self, result: &str) -> Option<Event> {
         if result != "NA" {
             let success = result == "Y";
-            Some(TheirEvent::MySonar{ sector: self.last_sonar_sector, success })
+            Some(Event::MySonar{ sector: self.last_sonar_sector, success })
         } else {
             None
         }
@@ -917,18 +942,19 @@ impl Them {
             && self.ncandidates() <= 25
     }
 
-    fn analyze_events(&mut self, events: Vec<TheirEvent>, map: &Map) {
-        for event in &events {
+    fn analyze_events(&mut self, events: EventSeq, map: &Map) {
+        for event in events.deref() {
             match event {
-                TheirEvent::Move{dir} => self.analyze_move(*dir, map),
-                TheirEvent::Surface{sector} => self.analyze_surface(*sector, map),
-                TheirEvent::Torpedo{target} => self.analyze_torpedo(target, map),
-                TheirEvent::Sonar{sector: _} => (),
-                TheirEvent::Silence => self.analyze_silence(map),
-                TheirEvent::MySonar{sector, success} =>
+                Event::Move{dir} => self.analyze_move(*dir, map),
+                Event::Surface{sector} => self.analyze_surface(*sector, map),
+                Event::Torpedo{target} => self.analyze_torpedo(target, map),
+                Event::Sonar{sector: _} => (),
+                Event::Silence => self.analyze_silence(map),
+                Event::MySonar{sector, success} =>
                     self.analyze_my_sonar(*sector, *success, map),
             }
         }
+        // self.history.push(events);
         self.pos_candidates.sort_unstable();
         eprintln!("total:{} {:?}", self.ncandidates(), self.pos_candidates);
     }
