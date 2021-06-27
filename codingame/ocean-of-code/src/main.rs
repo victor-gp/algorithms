@@ -52,17 +52,10 @@ struct Them {
 
 #[derive(PartialEq, Clone)]
 enum Action {
-    Move {
-        dir: char,
-        charge_device: &'static str,
-    },
+    Move { dir: char, charge_device: &'static str },
     Surface,
-    Torpedo {
-        target: Coord,
-    },
-    Sonar {
-        sector: usize,
-    },
+    Torpedo { target: Coord },
+    Sonar { sector: usize },
     // TODO: SILENCE
 }
 
@@ -88,6 +81,11 @@ struct Map {
     water: Vec<Coord>,
 }
 
+enum Cell {
+    Water,
+    Land,
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 // agnostic of Map, doesnt't care about bounds or Water/Land
 struct Coord {
@@ -96,11 +94,6 @@ struct Coord {
 }
 
 type CoordSet = HashSet<Coord>;
-
-enum Cell {
-    Water,
-    Land,
-}
 
 struct Timer {
     start: Instant,
@@ -137,7 +130,6 @@ fn read_starting_info() -> Global {
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
         let line = input_line.trim_matches('\n').to_string();
-
         let cells_row = line
             .chars()
             .map(|c| Cell::from_char(c))
@@ -191,10 +183,12 @@ fn read_turn_info(global: &Global, me: &mut Me, them: &mut Them) {
 impl Debug for Map {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let preamble = format!("Map {{\nwidth: {} / height: {}\n", self.width, self.height);
+        let row_to_string =
+            |row: &Vec<Cell>| row.iter().map(|cell| cell.to_char()).collect::<String>();
         let grid = self
             .grid
             .iter()
-            .map(|row| row.iter().map(|cell| cell.to_char()).collect::<String>())
+            .map(row_to_string)
             .collect::<Vec<String>>()
             .join("\n");
         let slice = &(preamble + &grid + "\n} Map");
@@ -271,8 +265,37 @@ impl Debug for Event {
             Self::Torpedo { target } => write!(f, "TORPEDO {}", target),
             Self::Sonar { sector } => write!(f, "SONAR {}", sector),
             Self::Silence => write!(f, "SILENCE"),
-            Self::MySonar { sector, success } => write!(f, "(MySonar {} {})", sector, success),
+            Self::MySonar { sector, success } =>
+                write!(f, "(MySonar {} {})", sector, success),
         }
+    }
+}
+
+impl Deref for ActionSeq {
+    type Target = Vec<Action>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for ActionSeq {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Deref for EventSeq {
+    type Target = Vec<Event>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for EventSeq {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
@@ -319,34 +342,6 @@ impl Debug for EventSeq {
     }
 }
 
-impl Deref for ActionSeq {
-    type Target = Vec<Action>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for ActionSeq {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl Deref for EventSeq {
-    type Target = Vec<Event>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for EventSeq {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 impl Event {
     fn from_str(s: &str) -> Option<Self> {
         let mut tokens = s.split_whitespace();
@@ -363,9 +358,7 @@ impl Event {
             "TORPEDO" => {
                 let x = parse_input!(tokens.next()?, usize);
                 let y = parse_input!(tokens.next()?, usize);
-                Some(Self::Torpedo {
-                    target: Coord { x, y },
-                })
+                Some(Self::Torpedo { target: Coord { x, y } })
             }
             "SONAR" => {
                 let sector = parse_input!(tokens.next()?, usize);
@@ -429,24 +422,14 @@ impl Timer {
 
 impl Action {
     fn new_move(dir: char) -> Action {
-        Action::Move {
-            dir,
-            charge_device: Action::TORPEDO,
-        }
+        Action::Move { dir, charge_device: Action::TORPEDO }
     }
 
     fn but_charge(&self, device: &'static str) -> Action {
-        if let Action::Move {
-            dir,
-            charge_device: _,
-        } = self
-        {
-            Action::Move {
-                dir: *dir,
-                charge_device: device,
-            }
+        if let Action::Move { dir, charge_device: _ } = self {
+            Action::Move { dir: *dir, charge_device: device }
         } else {
-            panic!("used Action::but_charge on \"{}\", should be a Move", self)
+            panic!("used Action::but_charge on \"{}\", only allowed for Action::Move", self)
         }
     }
 
@@ -457,15 +440,9 @@ impl Action {
     // assumes that self is a valid move from current_pos
     fn destination(&self, current_pos: &Coord) -> Coord {
         match self {
-            Action::Move {
-                dir,
-                charge_device: _,
-            } => *current_pos + *dir,
+            Action::Move { dir, charge_device: _ } => *current_pos + *dir,
             // Action::Silence ...
-            _ => panic!(
-                "Action::destination: not a displacement action, \"{:?}\"",
-                &self
-            ),
+            _ => panic!("Action::destination: not a displacement action, \"{:?}\"", &self),
         }
     }
 }
@@ -486,12 +463,7 @@ impl Map {
     fn new(width: usize, height: usize, grid: Vec<Vec<Cell>>) -> Map {
         let water = Map::water_positions(&grid);
 
-        Map {
-            width,
-            height,
-            grid,
-            water,
-        }
+        Map { width, height, grid, water }
     }
 
     // internal, Map methods only!
@@ -501,12 +473,14 @@ impl Map {
 
     fn is_within_bounds(&self, coord: &Coord) -> bool {
         // no need for 0 <= coords cause usize overflows on -1
-        coord.x < self.width && coord.y < self.height
+        coord.x < self.width
+            && coord.y < self.height
     }
 
     // use this to skip the is_within_bounds() check
     fn is_water(&self, coord: &Coord) -> bool {
-        self.is_within_bounds(&coord) && self.cell_at(&coord).is_water_cell()
+        self.is_within_bounds(&coord)
+            && self.cell_at(&coord).is_water_cell()
     }
 
     fn is_viable_move(&self, pos: &Coord, dir: char) -> bool {
@@ -543,11 +517,10 @@ impl Map {
             return Some(0);
         }
 
-        for coord in a
-            .neighbors_by_direction(b)
-            .iter()
-            .filter(|&coord| self.is_water(&coord))
-        {
+        let neighbors = a.neighbors_by_direction(b);
+        let water_neighbors = neighbors.iter().filter(|&coord| self.is_water(&coord));
+
+        for coord in water_neighbors {
             if visited[coord.y][coord.x] {
                 continue;
             }
@@ -570,7 +543,9 @@ impl Map {
         }
 
         for coord in a.neighbors_by_direction(&b) {
-            if self.is_water(&coord) && self.are_within_distance(&coord, b, distance - 1) {
+            if ! self.is_water(&coord) {
+                continue;
+            } else if self.are_within_distance(&coord, b, distance - 1) {
                 return true;
             }
         }
@@ -581,7 +556,7 @@ impl Map {
     fn cells_within_distance(&self, pos: &Coord, distance: usize) -> Vec<Coord> {
         let mut cells = Vec::with_capacity(
             // max possible number of cells within this distance of pos
-            (distance + 1).pow(2) + distance.pow(2),
+            (distance + 1).pow(2) + distance.pow(2)
         );
         // BFS
         cells.push(pos.clone());
@@ -591,14 +566,14 @@ impl Map {
             let mut new_neighbors = Vec::with_capacity(
                 // 4-1 neighbors/cell (one neighbor was stepped into in the previous step)
                 // +1 for the root case, which won't have any visited neighbors
-                3 * cells[pre_iter_start..].len() + 1,
+                3 * cells[pre_iter_start..].len() + 1
             );
             for pos in &cells[pre_iter_start..] {
                 let neighbors = pos.neighbors().into_iter().filter(|coord| {
-                    self.is_water(coord) && !cells[pre2_iter_start..].contains(coord)
+                    self.is_water(coord) && ! cells[pre2_iter_start..].contains(coord)
                 });
                 for neighbor in neighbors {
-                    if !new_neighbors.contains(&neighbor) {
+                    if ! new_neighbors.contains(&neighbor) {
                         new_neighbors.push(neighbor)
                     }
                 }
@@ -620,9 +595,9 @@ impl Map {
 
         let next = *pos + dir;
         if self.is_water(&next) {
-            let mut ret = self.cells_along(&next, dir, n - 1);
-            ret.insert(0, next);
-            ret
+            let mut cells = self.cells_along(&next, dir, n - 1);
+            cells.insert(0, next);
+            cells
         } else {
             Vec::new()
         }
@@ -630,7 +605,8 @@ impl Map {
 
     fn belongs_to_sector(&self, pos: &Coord, sector_id: usize) -> bool {
         let (min_x, min_y) = self.sector_addr(sector_id);
-        min_x <= pos.x && pos.x <= min_x + 4 && min_y <= pos.y && pos.y <= min_y + 4
+        min_x <= pos.x && pos.x <= min_x + 4
+            && min_y <= pos.y && pos.y <= min_y + 4
     }
 
     // cond: sector_id in [1,9]
@@ -717,22 +693,10 @@ impl Coord {
     fn neighbors_with_diagonals(&self) -> Vec<Coord> {
         let mut neighbors = self.neighbors();
         neighbors.append(&mut vec![
-            Coord {
-                x: self.x - 1,
-                y: self.y - 1,
-            },
-            Coord {
-                x: self.x + 1,
-                y: self.y - 1,
-            },
-            Coord {
-                x: self.x + 1,
-                y: self.y + 1,
-            },
-            Coord {
-                x: self.x - 1,
-                y: self.y + 1,
-            },
+            Coord { x: self.x -1, y: self.y -1 },
+            Coord { x: self.x +1, y: self.y -1 },
+            Coord { x: self.x +1, y: self.y +1 },
+            Coord { x: self.x -1, y: self.y +1 }
         ]);
 
         neighbors
@@ -835,7 +799,7 @@ impl Me {
             .iter()
             .zip(destinations)
             .filter_map(|(&dir, dest)| {
-                if map.is_water(&dest) && !self.visited.contains(&dest) {
+                if map.is_water(&dest) && ! self.visited.contains(&dest) {
                     Some(Action::new_move(dir))
                 } else {
                     None
@@ -846,12 +810,9 @@ impl Me {
 
     // (DFS) from pos, how many moves (+1) until I have to surface, None if > search_depth
     fn moves_to_surface(
-        &self,
-        map: &Map,
-        pos: &Coord,
-        newly_visited: &mut CoordSet,
-        search_depth: usize,
-    ) -> Option<usize> {
+        &self, map: &Map, pos: &Coord, newly_visited: &mut CoordSet, search_depth: usize
+    ) -> Option<usize>
+    {
         if search_depth == 0 {
             return None;
         }
@@ -859,15 +820,15 @@ impl Me {
         newly_visited.insert(pos.clone());
         let mut max_moves_to_surface = 0;
         for neighbor in pos.neighbors() {
-            if !map.is_water(&neighbor) {
+            if ! map.is_water(&neighbor) {
                 continue;
             }
             if self.visited.contains(&neighbor) || newly_visited.contains(&neighbor) {
                 continue;
             }
-
             let from_neighbor =
                 self.moves_to_surface(map, &neighbor, newly_visited, search_depth - 1);
+
             if let Some(moves_to_surface) = from_neighbor {
                 if moves_to_surface > max_moves_to_surface {
                     max_moves_to_surface = moves_to_surface;
@@ -896,8 +857,7 @@ impl Me {
             Action::SONAR
         }
         // FIXME: this charges Sonar when position is known...
-        else if them.is_position_narrow() {
-            // NICE: && are we close enough?
+        else if them.is_position_narrow() { // NICE: && are we close enough?
             Action::TORPEDO
         } else {
             Action::SONAR
@@ -914,10 +874,9 @@ impl Me {
 
     fn parse_sonar_result(&self, result: &str) -> Option<Event> {
         if result != "NA" {
-            let success = result == "Y";
             Some(Event::MySonar {
                 sector: self.last_sonar_sector,
-                success,
+                success: result == "Y"
             })
         } else {
             None
@@ -944,19 +903,13 @@ impl Me {
 
     fn best_shot(&self, them: &Them, map: &Map) -> (Coord, f32) {
         let targets = map.cells_within_distance(&self.pos, 4);
-        let impacts = targets
-            .iter()
-            .map(|target| them.torpedo_impact(target, &map));
+        let impacts = targets.iter().map(|target| them.torpedo_impact(target, &map));
         let mut scores = Vec::new();
         for (i, (naffected, damage_sum)) in impacts.enumerate() {
             let my_damage = self.torpedo_damage(&targets[i], map);
             let distance_from_me = map.distance(&self.pos, &targets[i]).unwrap();
             scores.push(Self::torpedo_score(
-                them.ncandidates(),
-                naffected,
-                damage_sum,
-                my_damage,
-                distance_from_me,
+                them.ncandidates(), naffected, damage_sum, my_damage, distance_from_me,
             ))
         }
 
@@ -968,13 +921,9 @@ impl Me {
     }
 
     fn torpedo_damage(&self, target: &Coord, map: &Map) -> usize {
-        if *target == self.pos {
-            2
-        } else if map.area_of_effect(&target).contains(&self.pos) {
-            1
-        } else {
-            0
-        }
+        if *target == self.pos { 2 }
+        else if map.area_of_effect(&target).contains(&self.pos) { 1 }
+        else { 0 }
     }
 
     fn torpedo_score(
@@ -995,13 +944,9 @@ impl Me {
         let mut weigh = |weight| score += weight;
 
         // should I be more careful with float comparisons?
-        if avg_candidates_dmg <= my_dmg {
-            weigh(-100.)
-        }
+        if avg_candidates_dmg <= my_dmg { weigh(-100.) }
         // known_position && position == target, so avg_damage ~= 2.0
-        else if avg_candidates_dmg > 1.95 {
-            weigh(100.)
-        }
+        else if avg_candidates_dmg > 1.95 { weigh(100.) }
         // NICE: revise this. I'm requiring (8+1*2)/12 affected, or 4/5
         //       perhaps ncandidates should be sqrted in that division...
         //       in the meantime, I'm changing to 12 the ncandidates cutoff in Me::should_torpedo.
@@ -1011,7 +956,7 @@ impl Me {
             weigh(avg_dmg_weight + naffected_weight);
         }
         weigh(distance_from_me as f32 / 4.); // range: [0,1]
-                                             // NICE: wait if I can narrow it down (Sonar available, their Silence on CD, etc.)
+        // NICE: wait if I can narrow it down (Sonar available, their Silence on CD, etc.)
 
         score
     }
@@ -1039,7 +984,8 @@ impl Them {
 
     // as in "narrowed down"
     fn is_position_narrow(&self) -> bool {
-        1 < self.ncandidates() && self.ncandidates() <= 25
+        1 < self.ncandidates()
+            && self.ncandidates() <= 25
     }
 
     fn analyze_events(&mut self, events: EventSeq, map: &Map) {
@@ -1050,7 +996,8 @@ impl Them {
                 Event::Torpedo { target } => self.analyze_torpedo(target, map),
                 Event::Sonar { sector: _ } => (),
                 Event::Silence => self.analyze_silence(map),
-                Event::MySonar { sector, success } => self.analyze_my_sonar(*sector, *success, map),
+                Event::MySonar { sector, success } =>
+                    self.analyze_my_sonar(*sector, *success, map),
             }
         }
         // self.history.push(events);
@@ -1075,18 +1022,18 @@ impl Them {
     }
 
     fn analyze_surface(&mut self, sector: usize, map: &Map) {
-        if !self.is_position_tracked() {
+        if ! self.is_position_tracked() {
             self.pos_candidates = map.water_cells_from_sector(sector);
-        } else if !self.is_position_known() {
+        } else if ! self.is_position_known() {
             self.pos_candidates
                 .retain(|pos| map.belongs_to_sector(pos, sector))
         }
     }
 
     fn analyze_torpedo(&mut self, target: &Coord, map: &Map) {
-        if !self.is_position_tracked() {
+        if ! self.is_position_tracked() {
             self.pos_candidates = map.cells_within_distance(&target, 4)
-        } else if !self.is_position_known() {
+        } else if ! self.is_position_known() {
             self.pos_candidates
                 .retain(|pos| map.are_within_distance(pos, &target, 4))
         }
@@ -1102,9 +1049,10 @@ impl Them {
             .flat_map(|pos| {
                 Coord::DIRECTIONS
                     .iter()
-                    .flat_map(
-                        move |&dir| map.cells_along(&pos.clone(), dir, max_sonar_dist), //TODO: trace_back (to discard visited)
-                    )
+                    .flat_map(move |&dir| {
+                        map.cells_along(&pos.clone(), dir, max_sonar_dist)
+                        //TODO: trace_back (to discard visited)
+                    })
                     .chain(iter::once(pos.clone()))
             })
             .collect();
@@ -1115,9 +1063,9 @@ impl Them {
     fn analyze_my_sonar(&mut self, sector: usize, success: bool, map: &Map) {
         if success {
             self.analyze_surface(sector, map)
-        } else if self.is_position_tracked() && !self.is_position_known() {
+        } else if self.is_position_tracked() && ! self.is_position_known() {
             self.pos_candidates
-                .retain(|pos| !map.belongs_to_sector(pos, sector))
+                .retain(|pos| ! map.belongs_to_sector(pos, sector))
         }
     }
 
@@ -1151,27 +1099,29 @@ impl Them {
 
     fn sonar_score(&self, map: &Map) -> f32 {
         // NICE: bring Them.silence_cooldown into the fold
-        if !self.is_position_tracked() || self.is_position_known() {
+        if ! self.is_position_tracked() || self.is_position_known() {
             return 0.;
         }
         let ncandidates = self.ncandidates();
         let min_discarded = self.sonar_discrimination(&map);
         let proportion = min_discarded as f32 / ncandidates as f32; // max = 0.5
 
-        let answer = min_discarded != 0
-            && (ncandidates < 10 || ncandidates < 25 && proportion > 0.2 || proportion > 0.4);
-        if answer {
-            1.
-        } else {
-            0.
-        }
+        let answer = min_discarded != 0 && (
+            ncandidates < 10
+            || ncandidates < 25 && proportion > 0.2
+            || proportion > 0.4
+        );
+        if answer { 1. } else { 0. }
     }
 
     // cond: position is tracked
     // ret = lower bound on pos_candidates to be discarded
     fn sonar_discrimination(&self, map: &Map) -> usize {
         let (_sector, most_candidates) = self.sector_most_candidates(&map);
-        cmp::min(most_candidates, self.ncandidates() - most_candidates)
+        cmp::min(
+            most_candidates,
+            self.ncandidates() - most_candidates
+        )
     }
 
     // cond: position is tracked
