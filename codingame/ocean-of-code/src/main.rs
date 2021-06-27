@@ -107,7 +107,7 @@ struct Timer {
 }
 
 use std::io;
-use std::fmt;
+use std::fmt::{self,Display,Debug,Formatter};
 use std::ops::{Deref, DerefMut};
 use std::time::{Duration, Instant};
 use std::ptr;
@@ -133,7 +133,6 @@ fn read_starting_info() -> Global {
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
         let line = input_line.trim_matches('\n').to_string();
-        // eprintln!("{}",line);
 
         let cells_row = line.chars()
             .map(|c| Cell::from_char(c))
@@ -181,12 +180,13 @@ fn read_turn_info(global: &Global, me: &mut Me, them: &mut Them) {
         if let Some(sonar_event) = me.parse_sonar_result(&sonar_result) {
             their_events.prepend(sonar_event);
         }
+        // eprintln!("{:?}", their_events);
         them.analyze_events(their_events, &global.map);
     }
 }
 
-impl fmt::Debug for Map {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Debug for Map {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let preamble = format!("Map {{\nwidth: {} / height: {}\n", self.width, self.height);
         let grid = self.grid.iter()
             .map(|row| row.iter()
@@ -200,14 +200,14 @@ impl fmt::Debug for Map {
     }
 }
 
-impl fmt::Display for Coord {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for Coord {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} {}", self.x, self.y)
     }
 }
 
-impl fmt::Debug for Coord {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Debug for Coord {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", (self.x, self.y))
     }
 }
@@ -233,8 +233,9 @@ impl Cell {
     }
 }
 
-impl fmt::Display for Action {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+// NICE: try adversarial output (whitespace, inCoNsISteNt cASE)
+impl Display for Action {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Move{dir, charge_device} => write!(f, "MOVE {} {}", dir, charge_device),
             Self::Surface => {
@@ -253,14 +254,14 @@ impl fmt::Display for Action {
     }
 }
 
-impl fmt::Debug for Action {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Debug for Action {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self)
     }
 }
 
-impl fmt::Debug for Event {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Debug for Event {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Move{dir} => write!(f, "MOVE {}", dir),
             Self::Surface{sector} => write!(f, "SURFACE {}", sector),
@@ -270,6 +271,52 @@ impl fmt::Debug for Event {
             Self::MySonar{sector, success} =>
                 write!(f, "(MySonar {} {})", sector, success),
         }
+    }
+}
+
+trait SeqFmt: Display + Debug + Sized {
+    fn display_fmt(seq: &Vec<Self>, f: &mut Formatter<'_>) -> fmt::Result {
+        let display_fmt_item = |item: &Self| item.to_string();
+        write!(f, "{}", Self::fmt_seq(seq, display_fmt_item))
+    }
+
+    fn debug_fmt(seq: &Vec<Self>, f: &mut Formatter<'_>) -> fmt::Result {
+        let debug_fmt_item = |item: &Self| format!("{:?}", item);
+        write!(f, "{}", Self::fmt_seq(seq, debug_fmt_item))
+    }
+
+    fn fmt_seq(seq: &Vec<Self>, fmt_item: impl Fn(&Self)->String) -> String {
+        seq.iter()
+            .map(fmt_item)
+            .collect::<Vec<String>>()
+            .join("|")
+    }
+}
+
+impl SeqFmt for Action {}
+impl SeqFmt for Event {}
+
+impl Display for Event {
+    fn fmt(&self, _f: &mut Formatter<'_>) -> fmt::Result {
+        unimplemented!()
+    }
+}
+
+impl Display for ActionSeq {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        SeqFmt::display_fmt(self, f)
+    }
+}
+
+impl Debug for ActionSeq {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        SeqFmt::debug_fmt(self, f)
+    }
+}
+
+impl Debug for EventSeq {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        SeqFmt::debug_fmt(self, f)
     }
 }
 
@@ -298,23 +345,6 @@ impl Deref for EventSeq {
 impl DerefMut for EventSeq {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
-    }
-}
-
-// NICE: try adversarial output (whitespace, inCoNsISteNt cASE)
-impl fmt::Display for ActionSeq {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let seq_string = self.iter().map(|action| {
-            format!("{}", action)
-        }).collect::< Vec<String> >().join("|");
-
-        write!(f, "{}", seq_string)
-    }
-}
-
-impl fmt::Debug for ActionSeq {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
     }
 }
 
@@ -358,18 +388,7 @@ impl EventSeq {
             .collect()
         )
     }
-
-    #[allow(dead_code)]
-    fn string_from_seq(&self) -> String {
-        self
-            .iter()
-            .map(|event| {format!("{:?}", event)})
-            .collect::<Vec<String>>()
-            .join("|")
-    }
 }
-
-
 
 impl Timer {
     fn new() -> Timer {
@@ -484,7 +503,6 @@ impl Map {
 
     // TODO: try to precalculate all distances at Map::new() time
     // cond: a, b are coords to water cells
-    #[allow(dead_code)]
     fn distance(&self, a: &Coord, b: &Coord) -> Option<usize> {
         let mut visited = vec![vec![false; self.width]; self.height];
         self._distance(a, b, &mut visited)
