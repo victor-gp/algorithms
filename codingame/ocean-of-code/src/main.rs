@@ -26,11 +26,9 @@ fn main() {
     }
 }
 
-#[allow(dead_code)]
 struct Global {
     map: Map,
     turn: usize,
-    game_turns: usize,
     me_first: bool,
 }
 
@@ -713,7 +711,6 @@ impl Global {
         Global {
             map,
             turn: 1,
-            game_turns: 300,
             me_first: my_id == 0
         }
     }
@@ -948,12 +945,6 @@ impl Them {
 
     fn is_position_known(&self) -> bool {
         self.ncandidates() == 1
-    }
-
-    #[allow(dead_code)]
-    // cond: position is known
-    fn position(&self) -> Coord {
-        self.pos_candidates[0].clone()
     }
 
     fn is_position_tracked(&self) -> bool {
