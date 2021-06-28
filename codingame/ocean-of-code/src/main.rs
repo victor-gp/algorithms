@@ -41,6 +41,7 @@ struct Me {
     silence_cooldown: usize,
     // mine_cooldown: usize,
     last_sonar_sector: usize,
+    // from_outside: Them,
 }
 
 struct Them {
@@ -82,7 +83,9 @@ struct Map {
     width: usize,
     height: usize,
     grid: Vec<Vec<Cell>>,
-    water: Vec<Coord>,
+    water: Vec<Coord>, // drop this?
+    // distances: Vec<usize>,
+    // hints: Vec<dir>,
 }
 
 enum Cell {
@@ -1290,6 +1293,7 @@ impl Me {
         }
 
         // TODO: if ! pre contains surface, etc.
+        //       plus uncomment the chain in viable_silences_from !
         //       do I really want to spam surface here though? it'll open many combinations...
 
         combinations
@@ -1333,7 +1337,6 @@ impl Me {
                 viable_silences
             })
             // .chain(iter::once(*pos));
-            // TODO: include pos after I add Surface to movement_combinations
             .collect()
     }
 }
