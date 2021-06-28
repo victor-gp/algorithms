@@ -38,7 +38,7 @@ struct Me {
     visited: CoordSet,
     torpedo_cooldown: usize,
     sonar_cooldown: usize,
-    // silence_cooldown: usize,
+    silence_cooldown: usize,
     // mine_cooldown: usize,
     last_sonar_sector: usize,
 }
@@ -56,7 +56,8 @@ enum Action {
     Surface,
     Torpedo { target: Coord },
     Sonar { sector: usize },
-    // TODO: SILENCE, MINE, TRIGGER
+    Silence { dir: char, distance: usize },
+    // TODO: MINE, TRIGGER
 }
 
 enum Event {
@@ -72,7 +73,9 @@ enum Event {
     // Mine { pre_candidates } + Trigger { target: Coord }
 }
 
+#[derive(Clone)]
 struct ActionSeq(Vec<Action>);
+
 struct EventSeq(Vec<Event>);
 
 struct Map {
@@ -170,6 +173,7 @@ fn read_turn_info(global: &Global, me: &mut Me, them: &mut Them) {
     them.lives = opp_life;
     me.torpedo_cooldown = torpedo_cooldown;
     me.sonar_cooldown = sonar_cooldown;
+    me.silence_cooldown = silence_cooldown;
 
     if global.turn > 2 || !global.me_first {
         let mut their_events = EventSeq::from_str(&opponent_orders);
@@ -247,6 +251,11 @@ impl Display for Action {
             Self::Sonar { sector } => {
                 eprintln!("mine:sonar");
                 write!(f, "SONAR {}", sector)
+            }
+            Self::Silence { dir, distance } => {
+                // TODO: report use with "my:silence", but not on debug
+                // try https://stackoverflow.com/a/50334049/11363646
+                write!(f, "SILENCE {} {}", dir, distance)
             }
         }
     }
@@ -437,13 +446,37 @@ impl Action {
     // devices for Action::Move.charge_device
     const TORPEDO: &'static str = "TORPEDO";
     const SONAR: &'static str = "SONAR";
+    const SILENCE: &'static str = "SILENCE";
 
-    // assumes that self is a valid move from current_pos
-    fn destination(&self, current_pos: &Coord) -> Coord {
+    // cond: self is a valid movement from current_pos
+    // ret: (destination coord, newly visited coords)
+    fn movement_result(&self, current_pos: &Coord) -> (Coord, Vec<Coord>) {
         match self {
-            Action::Move { dir, charge_device: _ } => *current_pos + *dir,
-            // Action::Silence ...
-            _ => panic!("Action::destination: not a displacement action, \"{:?}\"", &self),
+            Action::Move { dir, charge_device: _ } => {
+                let destination = *current_pos + *dir;
+                (destination, vec![destination])
+            }
+            Action::Silence { dir, distance } => {
+                let mut current_pos = *current_pos;
+                let mut newly_visited = Vec::with_capacity(*distance);
+                for _ in 1..=*distance {
+                    current_pos = current_pos + *dir;
+                    newly_visited.push(current_pos);
+                }
+                (current_pos, newly_visited)
+            }
+            _ => panic!("Action::destination: not a movement action, \"{:?}\"", &self),
+        }
+    }
+
+    const MAX_SILENCE_DIST: usize = 4;
+
+    // just the enum variant's name
+    fn kind(&self) -> String {
+        match self {
+            Action::Move { dir: _, charge_device: _ } => String::from("Move"),
+            Action::Silence { dir: _, distance: _ } => String::from("Silence"),
+            _ => String::from("other"),
         }
     }
 }
@@ -451,6 +484,30 @@ impl Action {
 impl ActionSeq {
     fn new() -> Self {
         ActionSeq(Vec::new())
+    }
+
+    // cond: the movements in self conform a valid sequence from origin
+    // ret: (destination coord, newly visited coords) for the entire sequence
+    fn movements_result(&self, origin: &Coord) -> (Coord, Vec<Coord>) {
+        let mut current_pos = *origin;
+        let mut newly_visited = Vec::new();
+        for action in self.deref() {
+            let (new_pos, visited) = action.movement_result(&current_pos);
+            current_pos = new_pos;
+            newly_visited.extend(visited);
+        }
+
+        (current_pos, newly_visited)
+    }
+
+    // "you can use each type of action only once per turn"
+    fn spends(&self, action_type: &str) -> bool {
+        for action in self.deref() {
+            if action.kind() == action_type {
+                return true
+            }
+        }
+        false
     }
 }
 
@@ -748,6 +805,7 @@ impl Me {
             visited: CoordSet::new(),
             torpedo_cooldown: 0,
             sonar_cooldown: 0,
+            silence_cooldown: 0,
             last_sonar_sector: 0,
         }
     }
@@ -769,8 +827,8 @@ impl Me {
         let viable_moves = self.viable_moves(&map);
         let moves_to_surface: Vec<Option<usize>> = viable_moves
             .iter()
-            .map(|_move| {
-                let dest = &_move.destination(&self.pos);
+            .map(|mv| {
+                let (dest, _) = &mv.movement_result(&self.pos);
                 self.moves_to_surface(map, dest, &mut CoordSet::new(), 3)
             })
             .collect();
@@ -852,7 +910,9 @@ impl Me {
         //       or just use best_shot().score and sonar_score() as if they were off CD?
         // NICE: take into account the CDs after the incoming action_seq
 
-        if !sonar_discharged {
+        if !sonar_discharged && !torpedo_discharged {
+            Action::SILENCE
+        } else if !sonar_discharged {
             Action::TORPEDO
         } else if !torpedo_discharged {
             Action::SONAR
@@ -916,7 +976,7 @@ impl Me {
 
         targets
             .into_iter()
-            .zip(scores.into_iter())
+            .zip(scores)
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
             .unwrap()
     }
@@ -1043,7 +1103,6 @@ impl Them {
     }
 
     fn analyze_silence(&mut self, map: &Map) {
-        let max_sonar_dist = 4;
         self.pos_candidates = self
             .pos_candidates
             .iter()
@@ -1051,7 +1110,7 @@ impl Them {
                 Coord::DIRECTIONS
                     .iter()
                     .flat_map(move |&dir| {
-                        map.cells_along(&pos.clone(), dir, max_sonar_dist)
+                        map.cells_along(pos, dir, Action::MAX_SILENCE_DIST)
                         //TODO: trace_back (to discard visited)
                     })
                     .chain(iter::once(pos.clone()))
@@ -1190,5 +1249,89 @@ impl Me {
         }
 
         action_seq
+    }
+
+    fn movement_combinations(
+        &self, map: &Map, origin: &Coord, previously: ActionSeq
+    ) -> Vec<ActionSeq>
+    {
+        // this can easily go over 100 in the first turn
+        let mut combinations = Vec::new();
+        if ! previously.is_empty() {
+            combinations.push(previously.clone());
+        }
+
+        let previously_append = |action| {
+            let mut new_seq = previously.clone();
+            new_seq.push(action);
+            new_seq
+        };
+        let mut combinations_with = |movements: Vec<Action>| {
+            combinations.extend(
+                movements
+                .into_iter()
+                .map(previously_append)
+                .flat_map(|seq| self.movement_combinations(map, origin, seq))
+            );
+        };
+
+        if ! previously.spends("Move") {
+            let (current_pos, visited) = previously.movements_result(origin);
+            let moves = self.viable_moves_from(map, &current_pos, visited);
+            combinations_with(moves);
+        }
+
+        if self.silence_cooldown == 0 && ! previously.spends("Silence") {
+            let (current_pos, visited) = previously.movements_result(origin);
+            let silences = self.viable_silences_from(map, &current_pos, visited);
+            combinations_with(silences);
+        }
+
+        // TODO: if ! pre contains surface, etc.
+        //       do I really want to spam surface here though? it'll open many combinations...
+
+        combinations
+    }
+
+    fn viable_moves_from(&self, map: &Map, pos: &Coord, newly_visited: Vec<Coord>) -> Vec<Action> {
+        // Coord.neighbors() uses the same order as DIRECTIONS
+        let destinations = pos.neighbors();
+        Coord::DIRECTIONS
+            .iter()
+            .zip(destinations)
+            .filter_map(|(&dir, dest)| {
+                if ! map.is_water(&dest)
+                    || self.visited.contains(&dest)
+                    || newly_visited.contains(&dest)
+                {
+                    None
+                } else {
+                    Some(Action::new_move(dir))
+                }
+            })
+            .collect()
+    }
+
+    fn viable_silences_from(&self, map: &Map, pos: &Coord, newly_visited: Vec<Coord>) -> Vec<Action> {
+        Coord::DIRECTIONS
+            .iter()
+            .flat_map(|&dir| {
+                let mut current_pos = *pos;
+                let mut viable_silences = Vec::new();
+                for distance in 1..=Action::MAX_SILENCE_DIST {
+                    current_pos = current_pos + dir;
+                    if ! map.is_water(&current_pos)
+                        || self.visited.contains(&current_pos)
+                        || newly_visited.contains(&current_pos)
+                    {
+                        break
+                    }
+                    viable_silences.push(Action::Silence { dir, distance })
+                }
+                viable_silences
+            })
+            // .chain(iter::once(*pos));
+            // TODO: include pos after I add Surface to movement_combinations
+            .collect()
     }
 }
