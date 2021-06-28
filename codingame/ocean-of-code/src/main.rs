@@ -238,32 +238,30 @@ impl Cell {
 // NICE: try adversarial output (whitespace, inCoNsISteNt cASE)
 impl Display for Action {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut report_and_write = |action: &Action| {
+            eprintln!("my:{}", action.kind().to_lowercase());
+            write!(f, "{:?}", self)
+        };
+
         match self {
-            Self::Move { dir, charge_device } => write!(f, "MOVE {} {}", dir, charge_device),
-            Self::Surface => {
-                eprintln!("mine:surface");
-                write!(f, "SURFACE")
-            }
-            Self::Torpedo { target } => {
-                eprintln!("mine:torpedo");
-                write!(f, "TORPEDO {}", target)
-            }
-            Self::Sonar { sector } => {
-                eprintln!("mine:sonar");
-                write!(f, "SONAR {}", sector)
-            }
-            Self::Silence { dir, distance } => {
-                // TODO: report use with "my:silence", but not on debug
-                // try https://stackoverflow.com/a/50334049/11363646
-                write!(f, "SILENCE {} {}", dir, distance)
-            }
+            Self::Move { .. } => write!(f, "{:?}", self),
+            Self::Surface => report_and_write(self),
+            Self::Torpedo { .. } => report_and_write(self),
+            Self::Sonar { .. } => report_and_write(self),
+            Self::Silence { .. } => report_and_write(self),
         }
     }
 }
 
 impl Debug for Action {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
+        match self {
+            Self::Move { dir, charge_device } => write!(f, "MOVE {} {}", dir, charge_device),
+            Self::Surface => write!(f, "SURFACE"),
+            Self::Torpedo { target } => write!(f, "TORPEDO {}", target),
+            Self::Sonar { sector } => write!(f, "SONAR {}", sector),
+            Self::Silence { dir, distance } => write!(f, "SILENCE {} {}", dir, distance)
+        }
     }
 }
 
@@ -431,32 +429,36 @@ impl Timer {
 }
 
 impl Action {
-    fn new_move(dir: char) -> Action {
-        Action::Move { dir, charge_device: Action::TORPEDO }
-    }
-
-    fn but_charge(&self, device: &'static str) -> Action {
-        if let Action::Move { dir, charge_device: _ } = self {
-            Action::Move { dir: *dir, charge_device: device }
-        } else {
-            panic!("used Action::but_charge on \"{}\", only allowed for Action::Move", self)
-        }
-    }
-
-    // devices for Action::Move.charge_device
+    // useful for ::kind and ::Move.charge_device
+    const MOVE: &'static str = "MOVE";
     const TORPEDO: &'static str = "TORPEDO";
+    const SURFACE: &'static str = "SURFACE";
     const SONAR: &'static str = "SONAR";
     const SILENCE: &'static str = "SILENCE";
+
+    const MAX_SILENCE_DIST: usize = 4;
+
+    fn new_move(dir: char) -> Self {
+        Self::Move { dir, charge_device: Self::TORPEDO }
+    }
+
+    fn but_charge(&self, device: &'static str) -> Self {
+        if let Self::Move { dir, .. } = self {
+            Self::Move { dir: *dir, charge_device: device }
+        } else {
+            panic!("used Self::but_charge on \"{}\", only allowed for Self::Move", self)
+        }
+    }
 
     // cond: self is a valid movement from current_pos
     // ret: (destination coord, newly visited coords)
     fn movement_result(&self, current_pos: &Coord) -> (Coord, Vec<Coord>) {
         match self {
-            Action::Move { dir, charge_device: _ } => {
+            Self::Move { dir, .. } => {
                 let destination = *current_pos + *dir;
                 (destination, vec![destination])
             }
-            Action::Silence { dir, distance } => {
+            Self::Silence { dir, distance } => {
                 let mut current_pos = *current_pos;
                 let mut newly_visited = Vec::with_capacity(*distance);
                 for _ in 1..=*distance {
@@ -465,18 +467,18 @@ impl Action {
                 }
                 (current_pos, newly_visited)
             }
-            _ => panic!("Action::destination: not a movement action, \"{:?}\"", &self),
+            _ => panic!("Self::destination: not a movement action, \"{:?}\"", &self),
         }
     }
 
-    const MAX_SILENCE_DIST: usize = 4;
-
-    // just the enum variant's name
-    fn kind(&self) -> String {
+    // the action's type, but type's a reserved keyword
+    fn kind(&self) -> &str {
         match self {
-            Action::Move { dir: _, charge_device: _ } => String::from("Move"),
-            Action::Silence { dir: _, distance: _ } => String::from("Silence"),
-            _ => String::from("other"),
+            Self::Move { .. } => Self::MOVE,
+            Self::Torpedo { .. } => Self::TORPEDO,
+            Self::Surface { .. } => Self::SURFACE,
+            Self::Sonar { .. } => Self::SONAR,
+            Self::Silence { .. } => Self::SILENCE,
         }
     }
 }
@@ -1055,7 +1057,7 @@ impl Them {
                 Event::Move { dir } => self.analyze_move(*dir, map),
                 Event::Surface { sector } => self.analyze_surface(*sector, map),
                 Event::Torpedo { target } => self.analyze_torpedo(target, map),
-                Event::Sonar { sector: _ } => (),
+                Event::Sonar { .. } => (),
                 Event::Silence => self.analyze_silence(map),
                 Event::MySonar { sector, success } =>
                     self.analyze_my_sonar(*sector, *success, map),
@@ -1275,13 +1277,13 @@ impl Me {
             );
         };
 
-        if ! previously.spends("Move") {
+        if ! previously.spends(Action::MOVE) {
             let (current_pos, visited) = previously.movements_result(origin);
             let moves = self.viable_moves_from(map, &current_pos, visited);
             combinations_with(moves);
         }
 
-        if self.silence_cooldown == 0 && ! previously.spends("Silence") {
+        if self.silence_cooldown == 0 && ! previously.spends(Action::SILENCE) {
             let (current_pos, visited) = previously.movements_result(origin);
             let silences = self.viable_silences_from(map, &current_pos, visited);
             combinations_with(silences);
