@@ -18,36 +18,29 @@ class Point
 
   def self.zero(dimensions)
     coordinates = Array.new(dimensions, 0)
-
     Point.new(nil, coordinates)
   end
 
   def nearest_index(points)
-    distances = points.map{|p| self.distance(p)}
+    distances = points.map{ |p| distance(p) }
     _, index = distances.each_with_index.min
-
     index
   end
 
   def distance(other_point)
-    coord_pairs = self.coordinates.zip(other_point.coordinates)
-    squares = coord_pairs.map{|a, b| (a-b)**2}
-
+    coord_pairs = coordinates.zip other_point.coordinates
+    squares = coord_pairs.map{ |a, b| (a - b)**2 }
     Math.sqrt(squares.sum)
   end
 
   def same_orthant?(other_point)
-    coord_pairs = self.coordinates.zip(other_point.coordinates)
-    for (a, b) in coord_pairs
-      return false if a*b < 0
-    end
-
-    true
+    coord_pairs = coordinates.zip other_point.coordinates
+    coord_pairs.none?{ |a, b| a * b < 0 }
   end
 end
 
 def read_input
-  count, n = gets.split.map(&:to_i)
+  count, _ = gets.split.map(&:to_i)
   points = []
   count.times do
     point_line = gets
@@ -60,11 +53,9 @@ end
 def first_point_index(points)
   dimensions = points[0].coordinates.length
   origin = Point.zero(dimensions)
-
   origin.nearest_index(points)
 end
 
-# mutates points
 def greedy_path!(points, current_index)
   return if points.length == 1
 
@@ -78,13 +69,12 @@ end
 
 def print_path(points)
   print points[0].label
-  for i in 1...points.length
-    print ' ' unless points[i].same_orthant?(points[i-1])
-    print points[i].label
+  for point, previous in points[1..].zip points
+    print ' ' unless point.same_orthant?(previous)
+    print point.label
   end
   puts
 end
-
 
 points = read_input
 first = first_point_index(points)
