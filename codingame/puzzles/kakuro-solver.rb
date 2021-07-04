@@ -18,8 +18,6 @@ class Kakuro
 
   def solve!
     inner_solve!(0, -1)
-
-    nil
   end
 
   private
@@ -62,6 +60,7 @@ class Kakuro
   # inv: all variables before (i,j) have been assigned (locally) correct values
   def inner_solve!(i, j)
     next_variable = next_variable(i, j)
+    return false unless validate_lines_between([i, j], next_variable)
     return true if next_variable.nil?
 
     i, j = next_variable
@@ -121,6 +120,44 @@ class Kakuro
 
     candidates
   end
+
+  # cond: start is a valid cell, end may be nil (finished traversal)
+  # ret: true if all rows/cols ending between start and end are valid
+  def validate_lines_between(start, end_)
+    start_i, start_j = start
+    start_j = 0 if start_j == -1
+    end_i, end_j = end_ ? end_ : [height, width]
+
+    return false unless (start_i...end_i).all?{ |i| validate_row(i) }
+
+    if end_i >= height - 1
+      start_j = 0 if start_i < height - 1
+
+      return false unless (start_j...end_j).all?{ |j| validate_column(j) }
+    end
+
+    true
+  end
+
+  def validate_row(i)
+    acc = 0
+    (width - 1).downto(0).each do |j|
+      acc = grid[i][j].right_validate(acc)
+      return false if acc.nil?
+    end
+
+    true
+  end
+
+  def validate_column(j)
+    acc = 0
+    (height - 1).downto(0).each do |i|
+      acc = grid[i][j].down_validate(acc)
+      return false if acc.nil?
+    end
+
+    true
+  end
 end
 
 class VariableDigit
@@ -150,7 +187,12 @@ class VariableDigit
     sum_so_far
   end
 
+  def right_validate(sum_so_far)
+    sum_so_far + value
+  end
+
   alias :down_constrain! :right_constrain!
+  alias :down_validate :right_validate
 end
 
 module Fixed
@@ -163,8 +205,10 @@ class X
   def to_s = 'X'
 
   def right_constrain!(candidates, sum_so_far) = sum_so_far
+  def right_validate(sum_so_far) = sum_so_far
 
   alias :down_constrain! :right_constrain!
+  alias :down_validate :right_validate
 end
 
 module FixedSingleValue
@@ -189,7 +233,12 @@ class FixedDigit
     sum_so_far + value
   end
 
+  def right_validate(sum_so_far)
+    sum_so_far + value
+  end
+
   alias :down_constrain! :right_constrain!
+  alias :down_validate :right_validate
 end
 
 class RightsideSum
@@ -206,6 +255,16 @@ class RightsideSum
   end
 
   def down_constrain!(candidates, sum_so_far) = sum_so_far
+
+  def right_validate(sum_so_far)
+    if value == sum_so_far
+      sum_so_far
+    else
+      nil
+    end
+  end
+
+  def down_validate(sum_so_far) = sum_so_far
 end
 
 class DownwardSum
@@ -222,9 +281,21 @@ class DownwardSum
     candidates.select{ |x| x <= difference }
     sum_so_far
   end
+
+  def right_validate(sum_so_far) = sum_so_far
+
+  def down_validate(sum_so_far)
+    if value == sum_so_far
+      sum_so_far
+    else
+      nil
+    end
+  end
 end
 
 class CrossSums
+  include Fixed
+
   def initialize(downward_sum, rightside_sum)
     @rightside_sum = rightside_sum
     @downward_sum = downward_sum
@@ -242,6 +313,14 @@ class CrossSums
 
   def down_constrain!(candidates, sum_so_far)
     downward_sum.down_constrain!(candidates, sum_so_far)
+  end
+
+  def right_validate(sum_so_far)
+    rightside_sum.right_validate(sum_so_far)
+  end
+
+  def down_validate(sum_so_far)
+    downward_sum.down_validate(sum_so_far)
   end
 end
 
