@@ -113,12 +113,14 @@ class Kakuro
 
     acc = 0
     (width - 1).downto(0).each do |j|
-      acc = grid[i][j].right_constrain!(candidates, acc)
+      acc = grid[i][j].add_to(acc)
+      grid[i][j].right_constrain!(candidates, acc)
     end
 
     acc = 0
     (height - 1).downto(0).each do |i|
-      acc = grid[i][j].down_constrain!(candidates, acc)
+      acc = grid[i][j].add_to(acc)
+      grid[i][j].down_constrain!(candidates, acc)
     end
 
     candidates
@@ -165,16 +167,30 @@ class Kakuro
   end
 end
 
-module Summable
-  def add_to(accumulated)
-    accumulated + value
-  end
-end
-
 module NotSummable
   def add_to(accumulated)
     accumulated
   end
+end
+
+module ValueConstraint
+  def value_constrain!(candidates, _accumulated)
+    candidates.delete(value)
+  end
+end
+
+module SumConstraint
+  def sum_constrain!(candidates, accumulated)
+    difference = value - accumulated
+    candidates.select{ |x| x <= difference }
+  end
+end
+
+module NoConstraint
+  def constrain_not(_candidates, _accumulated) = nil
+
+  alias :right_constrain! :constrain_not
+  alias :down_constrain!  :constrain_not
 end
 
 module Validation
@@ -193,7 +209,7 @@ module NoValidation
 end
 
 class VariableDigit
-  include Summable
+  include ValueConstraint
   include NoValidation
 
   def initialize
@@ -203,23 +219,17 @@ class VariableDigit
   attr_accessor :value
 
   def to_s
-    if value
-      value.to_s
-    else
-      '?'
-    end
+    value ? value.to_s : '?'
   end
 
   def variable? = true
 
-  # constrains candidates, returns updated accumulated
-  def right_constrain!(candidates, accumulated)
-    if value
-      candidates.delete(value)
-      accumulated += value
-    end
+  def add_to(accumulated)
+    value ? accumulated + value : accumulated
+  end
 
-    accumulated
+  def right_constrain!(candidates, _accumulated)
+    value_constrain!(candidates, _accumulated) if value
   end
 
   alias :down_constrain! :right_constrain!
@@ -232,12 +242,10 @@ end
 class X
   include Fixed
   include NotSummable
+  include NoConstraint
   include NoValidation
 
   def to_s = 'X'
-
-  def right_constrain!(candidates, accumulated) = accumulated
-  alias :down_constrain! :right_constrain!
 end
 
 module FixedSingleValue
@@ -252,24 +260,26 @@ end
 
 class FixedDigit
   include FixedSingleValue
-  include Summable
+  include ValueConstraint
   include NoValidation
 
   def to_s
     value.to_s
   end
 
-  def right_constrain!(candidates, accumulated)
-    candidates.delete(value)
+  def add_to(accumulated)
     accumulated + value
   end
 
-  alias :down_constrain! :right_constrain!
+  alias :right_constrain! :value_constrain!
+  alias :down_constrain!  :value_constrain!
 end
 
 class RightsideSum
   include FixedSingleValue
   include NotSummable
+  include SumConstraint
+  include NoConstraint
   include Validation
   include NoValidation
 
@@ -277,20 +287,15 @@ class RightsideSum
     "\\#{value}"
   end
 
-  def right_constrain!(candidates, accumulated)
-    difference = value - accumulated
-    candidates.select{ |x| x <= difference }
-    accumulated
-  end
-
-  def down_constrain!(candidates, accumulated) = accumulated
-
-  alias :validate_right :validate
+  alias :right_constrain! :sum_constrain!
+  alias :validate_right   :validate
 end
 
 class DownwardSum
   include FixedSingleValue
   include NotSummable
+  include SumConstraint
+  include NoConstraint
   include Validation
   include NoValidation
 
@@ -298,15 +303,8 @@ class DownwardSum
     "#{value}\\"
   end
 
-  def right_constrain!(candidates, accumulated) = accumulated
-
-  def down_constrain!(candidates, accumulated)
-    difference = value - accumulated
-    candidates.select{ |x| x <= difference }
-    accumulated
-  end
-
-  alias :validate_down :validate
+  alias :down_constrain! :sum_constrain!
+  alias :validate_down   :validate
 end
 
 class CrossSums
@@ -326,7 +324,7 @@ class CrossSums
   end
 
   def_delegators :@rightside_sum, :right_constrain!, :validate_right
-  def_delegators :@downward_sum, :down_constrain!, :validate_down
+  def_delegators :@downward_sum,  :down_constrain!,  :validate_down
 end
 
 
