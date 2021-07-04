@@ -1,5 +1,7 @@
 # https://www.codingame.com/training/hard/kakuro-solver
 
+require 'forwardable'
+
 class Kakuro
   def initialize(height, width, grid_s)
     @height = height
@@ -306,6 +308,8 @@ end
 
 class CrossSums
   include Fixed
+  include NotSummable
+  extend Forwardable
 
   def initialize(downward_sum, rightside_sum)
     @rightside_sum = rightside_sum
@@ -318,21 +322,8 @@ class CrossSums
     "#{downward_sum.value}\\#{rightside_sum.value}"
   end
 
-  def right_constrain!(candidates, sum_so_far)
-    rightside_sum.right_constrain!(candidates, sum_so_far)
-  end
-
-  def down_constrain!(candidates, sum_so_far)
-    downward_sum.down_constrain!(candidates, sum_so_far)
-  end
-
-  def validate_right(sum_so_far)
-    rightside_sum.validate_right(sum_so_far)
-  end
-
-  def validate_down(sum_so_far)
-    downward_sum.validate_down(sum_so_far)
-  end
+  def_delegators :@rightside_sum, :right_constrain!, :validate_right
+  def_delegators :@downward_sum, :down_constrain!, :validate_down
 end
 
 
