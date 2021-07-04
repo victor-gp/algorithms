@@ -45,13 +45,13 @@ class Kakuro
       elsif cell_s == 'X'
         X.new
       elsif /^(?<sum>\d+)\\$/ =~ cell_s
-        RightsideSum.new(sum.to_i)
-      elsif /^\\(?<sum>\d+)$/ =~ cell_s
         DownwardSum.new(sum.to_i)
+      elsif /^\\(?<sum>\d+)$/ =~ cell_s
+        RightsideSum.new(sum.to_i)
       elsif /^(?<sumL>\d+)\\(?<sumR>\d+)$/ =~ cell_s
         CrossSums.new(
-          RightsideSum.new(sumL.to_i),
-          DownwardSum.new(sumR.to_i)
+          DownwardSum.new(sumL.to_i),
+          RightsideSum.new(sumR.to_i)
         )
       else
         FixedDigit.new(cell_s.to_i)
@@ -196,7 +196,7 @@ class RightsideSum
   include FixedSingleValue
 
   def to_s
-    "#{value}\\"
+    "\\#{value}"
   end
 
   def right_constrain!(candidates, sum_so_far)
@@ -212,7 +212,7 @@ class DownwardSum
   include FixedSingleValue
 
   def to_s
-    "\\#{value}"
+    "#{value}\\"
   end
 
   def right_constrain!(candidates, sum_so_far) = sum_so_far
@@ -225,7 +225,7 @@ class DownwardSum
 end
 
 class CrossSums
-  def initialize(rightside_sum, downward_sum)
+  def initialize(downward_sum, rightside_sum)
     @rightside_sum = rightside_sum
     @downward_sum = downward_sum
   end
@@ -233,7 +233,7 @@ class CrossSums
   attr_reader :rightside_sum, :downward_sum
 
   def to_s
-    "#{rightside_sum.value}\\#{downward_sum.value}"
+    "#{downward_sum.value}\\#{rightside_sum.value}"
   end
 
   def right_constrain!(candidates, sum_so_far)
