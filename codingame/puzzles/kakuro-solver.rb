@@ -142,8 +142,8 @@ class Kakuro
   def validate_row(i)
     acc = 0
     (width - 1).downto(0).each do |j|
-      acc = grid[i][j].right_validate(acc)
-      return false if acc.nil?
+      acc = grid[i][j].add_to(acc)
+      return false unless grid[i][j].validate_right(acc)
     end
 
     true
@@ -152,15 +152,45 @@ class Kakuro
   def validate_column(j)
     acc = 0
     (height - 1).downto(0).each do |i|
-      acc = grid[i][j].down_validate(acc)
-      return false if acc.nil?
+      acc = grid[i][j].add_to(acc)
+      return false unless grid[i][j].validate_down(acc)
     end
 
     true
   end
 end
 
+module Summable
+  def add_to(sum_so_far)
+    sum_so_far + value
+  end
+end
+
+module NotSummable
+  def add_to(sum_so_far)
+    sum_so_far
+  end
+end
+
+module Validation
+  def validate(sum_so_far)
+    value == sum_so_far
+  end
+end
+
+module NoValidation
+  def validate_not(sum_so_far)
+    true
+  end
+
+  alias :validate_right :validate_not
+  alias :validate_down  :validate_not
+end
+
 class VariableDigit
+  include Summable
+  include NoValidation
+
   def initialize
     @value = nil
   end
@@ -187,12 +217,7 @@ class VariableDigit
     sum_so_far
   end
 
-  def right_validate(sum_so_far)
-    sum_so_far + value
-  end
-
   alias :down_constrain! :right_constrain!
-  alias :down_validate :right_validate
 end
 
 module Fixed
@@ -201,14 +226,13 @@ end
 
 class X
   include Fixed
+  include NotSummable
+  include NoValidation
 
   def to_s = 'X'
 
   def right_constrain!(candidates, sum_so_far) = sum_so_far
-  def right_validate(sum_so_far) = sum_so_far
-
   alias :down_constrain! :right_constrain!
-  alias :down_validate :right_validate
 end
 
 module FixedSingleValue
@@ -223,6 +247,8 @@ end
 
 class FixedDigit
   include FixedSingleValue
+  include Summable
+  include NoValidation
 
   def to_s
     value.to_s
@@ -233,16 +259,14 @@ class FixedDigit
     sum_so_far + value
   end
 
-  def right_validate(sum_so_far)
-    sum_so_far + value
-  end
-
   alias :down_constrain! :right_constrain!
-  alias :down_validate :right_validate
 end
 
 class RightsideSum
   include FixedSingleValue
+  include NotSummable
+  include Validation
+  include NoValidation
 
   def to_s
     "\\#{value}"
@@ -256,19 +280,14 @@ class RightsideSum
 
   def down_constrain!(candidates, sum_so_far) = sum_so_far
 
-  def right_validate(sum_so_far)
-    if value == sum_so_far
-      sum_so_far
-    else
-      nil
-    end
-  end
-
-  def down_validate(sum_so_far) = sum_so_far
+  alias :validate_right :validate
 end
 
 class DownwardSum
   include FixedSingleValue
+  include NotSummable
+  include Validation
+  include NoValidation
 
   def to_s
     "#{value}\\"
@@ -282,15 +301,7 @@ class DownwardSum
     sum_so_far
   end
 
-  def right_validate(sum_so_far) = sum_so_far
-
-  def down_validate(sum_so_far)
-    if value == sum_so_far
-      sum_so_far
-    else
-      nil
-    end
-  end
+  alias :validate_down :validate
 end
 
 class CrossSums
@@ -315,12 +326,12 @@ class CrossSums
     downward_sum.down_constrain!(candidates, sum_so_far)
   end
 
-  def right_validate(sum_so_far)
-    rightside_sum.right_validate(sum_so_far)
+  def validate_right(sum_so_far)
+    rightside_sum.validate_right(sum_so_far)
   end
 
-  def down_validate(sum_so_far)
-    downward_sum.down_validate(sum_so_far)
+  def validate_down(sum_so_far)
+    downward_sum.validate_down(sum_so_far)
   end
 end
 
