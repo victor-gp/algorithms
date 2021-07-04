@@ -18,8 +18,9 @@ class Kakuro
     end.join("\n")
   end
 
+  # cond: the Kakuro has a solution
   def solve!
-    inner_solve!(0, -1)
+    solve_inner!(0, -1)
   end
 
   private
@@ -60,7 +61,7 @@ class Kakuro
   end
 
   # inv: all variables before (i,j) have been assigned (locally) correct values
-  def inner_solve!(i, j)
+  def solve_inner!(i, j)
     next_variable = next_variable(i, j)
     return false unless validate_lines_between([i, j], next_variable)
     return true if next_variable.nil?
@@ -69,14 +70,14 @@ class Kakuro
     candidates = candidates_for(i, j)
     candidates.each do |candidate|
       grid[i][j].value = candidate
-      return true if inner_solve!(i, j)
+      return true if solve_inner!(i, j)
     end
 
     grid[i][j].value = nil
     false
   end
 
-  # not including (i,j), nil if none
+  # not including (i,j), nil if none left
   def next_variable(i, j)
     next_cell  = next_cell(i, j)
     return nil if next_cell.nil?
@@ -145,7 +146,8 @@ class Kakuro
     acc = 0
     (width - 1).downto(0).each do |j|
       acc = grid[i][j].add_to(acc)
-      return false unless grid[i][j].validate_right(acc)
+      return false unless
+        grid[i][j].validate_right(acc)
     end
 
     true
@@ -155,7 +157,8 @@ class Kakuro
     acc = 0
     (height - 1).downto(0).each do |i|
       acc = grid[i][j].add_to(acc)
-      return false unless grid[i][j].validate_down(acc)
+      return false unless
+        grid[i][j].validate_down(acc)
     end
 
     true
@@ -163,25 +166,25 @@ class Kakuro
 end
 
 module Summable
-  def add_to(sum_so_far)
-    sum_so_far + value
+  def add_to(accumulated)
+    accumulated + value
   end
 end
 
 module NotSummable
-  def add_to(sum_so_far)
-    sum_so_far
+  def add_to(accumulated)
+    accumulated
   end
 end
 
 module Validation
-  def validate(sum_so_far)
-    value == sum_so_far
+  def validate(accumulated)
+    value == accumulated
   end
 end
 
 module NoValidation
-  def validate_not(sum_so_far)
+  def validate_not(accumulated)
     true
   end
 
@@ -209,14 +212,14 @@ class VariableDigit
 
   def variable? = true
 
-  # constrains candidates, returns updated sum_so_far
-  def right_constrain!(candidates, sum_so_far)
+  # constrains candidates, returns updated accumulated
+  def right_constrain!(candidates, accumulated)
     if value
       candidates.delete(value)
-      sum_so_far += value
+      accumulated += value
     end
 
-    sum_so_far
+    accumulated
   end
 
   alias :down_constrain! :right_constrain!
@@ -233,7 +236,7 @@ class X
 
   def to_s = 'X'
 
-  def right_constrain!(candidates, sum_so_far) = sum_so_far
+  def right_constrain!(candidates, accumulated) = accumulated
   alias :down_constrain! :right_constrain!
 end
 
@@ -256,9 +259,9 @@ class FixedDigit
     value.to_s
   end
 
-  def right_constrain!(candidates, sum_so_far)
+  def right_constrain!(candidates, accumulated)
     candidates.delete(value)
-    sum_so_far + value
+    accumulated + value
   end
 
   alias :down_constrain! :right_constrain!
@@ -274,13 +277,13 @@ class RightsideSum
     "\\#{value}"
   end
 
-  def right_constrain!(candidates, sum_so_far)
-    difference = value - sum_so_far
+  def right_constrain!(candidates, accumulated)
+    difference = value - accumulated
     candidates.select{ |x| x <= difference }
-    sum_so_far
+    accumulated
   end
 
-  def down_constrain!(candidates, sum_so_far) = sum_so_far
+  def down_constrain!(candidates, accumulated) = accumulated
 
   alias :validate_right :validate
 end
@@ -295,12 +298,12 @@ class DownwardSum
     "#{value}\\"
   end
 
-  def right_constrain!(candidates, sum_so_far) = sum_so_far
+  def right_constrain!(candidates, accumulated) = accumulated
 
-  def down_constrain!(candidates, sum_so_far)
-    difference = value - sum_so_far
+  def down_constrain!(candidates, accumulated)
+    difference = value - accumulated
     candidates.select{ |x| x <= difference }
-    sum_so_far
+    accumulated
   end
 
   alias :validate_down :validate
@@ -309,7 +312,7 @@ end
 class CrossSums
   include Fixed
   include NotSummable
-  extend Forwardable
+  extend  Forwardable
 
   def initialize(downward_sum, rightside_sum)
     @rightside_sum = rightside_sum
