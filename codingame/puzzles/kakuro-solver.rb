@@ -179,14 +179,8 @@ class Kakuro
   end
 end
 
-module NotSummable
-  def add_to(accumulated)
-    accumulated
-  end
-end
-
-module ValueConstraint
-  def value_constrain!(candidates, _accumulated)
+module UniqueConstraint
+  def unique_constrain!(candidates, _accumulated)
     candidates.delete(value)
   end
 end
@@ -222,7 +216,7 @@ module NoValidation
 end
 
 class VariableDigit
-  include ValueConstraint
+  include UniqueConstraint
   include NoValidation
 
   def initialize
@@ -242,7 +236,7 @@ class VariableDigit
   end
 
   def right_constrain!(candidates, _accumulated)
-    value_constrain!(candidates, _accumulated) if value
+    unique_constrain!(candidates, _accumulated) if value
   end
 
   alias :down_constrain! :right_constrain!
@@ -250,6 +244,12 @@ end
 
 module Fixed
   def variable? = false
+end
+
+module NotSummable
+  def add_to(accumulated)
+    accumulated
+  end
 end
 
 class X
@@ -273,7 +273,7 @@ end
 
 class FixedDigit
   include FixedSingleValue
-  include ValueConstraint
+  include UniqueConstraint
   include NoValidation
 
   def to_s
@@ -284,8 +284,8 @@ class FixedDigit
     accumulated + value
   end
 
-  alias :right_constrain! :value_constrain!
-  alias :down_constrain!  :value_constrain!
+  alias :right_constrain! :unique_constrain!
+  alias :down_constrain!  :unique_constrain!
 end
 
 class SingleSum
