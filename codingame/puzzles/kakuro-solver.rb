@@ -7,7 +7,6 @@ class Kakuro
     @height = height
     @width = width
     @grid = self.class.parse_grid(grid_s)
-    # TODO: vars_left, vars_above
   end
 
   attr_reader :height, :width
@@ -58,9 +57,6 @@ class Kakuro
       else
         FixedDigit.new(cell_s.to_i)
       end
-    end
-
-    def compute_var_counts(grid)
     end
   end
 
@@ -116,16 +112,30 @@ class Kakuro
   # cond: (i,j) is a variable cell
   def candidates_for(i, j)
     candidates = (1..9).to_a
+    unique_constrain!(candidates, i, j)
+    sums_constrain!(candidates, i, j)
+    candidates
+  end
+
+  def unique_constrain!(candidates, i, j)
+    (0...width).each{ |j| grid[i][j].unique_constrain!(candidates) }
+    (0...height).each{ |i| grid[i][j].unique_constrain!(candidates) }
+  end
+
+  def sums_constrain!(candidates, i, j)
+    nvars = 0
     reverse_row_accumulation(i) do |i, j, acc|
-      grid[i][j].right_constrain!(candidates, acc)
-      return candidates if candidates.empty?
-    end
-    reverse_column_accumulation(j) do |i, j, acc|
-      grid[i][j].down_constrain!(candidates, acc)
+      nvars += 1 if grid[i][j].variable?
+      grid[i][j].right_constrain!(candidates, acc, nvars)
       return candidates if candidates.empty?
     end
 
-    candidates
+    nvars = 0
+    reverse_column_accumulation(j) do |i, j, acc|
+      nvars += 1 if grid[i][j].variable?
+      grid[i][j].down_constrain!(candidates, acc, nvars)
+      return candidates if candidates.empty?
+    end
   end
 
   # cond: start is a valid cell, end may be nil (finished traversal)
@@ -183,24 +193,32 @@ class Kakuro
 end
 
 module UniqueConstraint
-  def unique_constrain!(candidates, _accumulated)
+  def delete_value!(candidates)
     candidates.delete(value)
   end
 end
 
 module SumConstraint
-  def sum_constrain!(candidates, accumulated)
-    # TODO: find a lower bound too, with unassigned_vars and assuming candidates is sorted
-    difference = value - accumulated
-    candidates.select{ |x| x <= difference }
+  # cond: candidates is sorted
+  def sum_constrain!(candidates, accumulated, nvars)
+    nvars -= 1 # other vars, w/o the one being assigned
+    min_others = candidates[...nvars].sum
+    max_difference = value - accumulated - min_others
+    offset = candidates.length - nvars
+    max_others = candidates[offset..].sum
+    min_difference = value - accumulated - max_others
+
+    candidates.select{ |x| min_difference <= x && x <= max_difference }
   end
 end
 
-module NoConstraint
-  def constrain_not(_candidates, _accumulated) = nil
+module NoConstraints
+  def constrain_not_1(_candidates) = nil
+  def constrain_not_3(_candidates, _accumulated, _nvars) = nil
 
-  alias :right_constrain! :constrain_not
-  alias :down_constrain!  :constrain_not
+  alias :unique_constrain! :constrain_not_1
+  alias :right_constrain!  :constrain_not_3
+  alias :down_constrain!   :constrain_not_3
 end
 
 module Validation
@@ -220,6 +238,7 @@ end
 
 class VariableDigit
   include UniqueConstraint
+  include NoConstraints
   include NoValidation
 
   def initialize
@@ -238,11 +257,9 @@ class VariableDigit
     value ? accumulated + value : accumulated
   end
 
-  def right_constrain!(candidates, _accumulated)
-    unique_constrain!(candidates, _accumulated) if value
+  def unique_constrain!(candidates)
+    value ? delete_value!(candidates) : nil
   end
-
-  alias :down_constrain! :right_constrain!
 end
 
 module Fixed
@@ -258,7 +275,7 @@ end
 class X
   include Fixed
   include NotSummable
-  include NoConstraint
+  include NoConstraints
   include NoValidation
 
   def to_s = 'X'
@@ -277,6 +294,7 @@ end
 class FixedDigit
   include FixedSingleValue
   include UniqueConstraint
+  include NoConstraints
   include NoValidation
 
   def to_s
@@ -287,15 +305,14 @@ class FixedDigit
     accumulated + value
   end
 
-  alias :right_constrain! :unique_constrain!
-  alias :down_constrain!  :unique_constrain!
+  alias :unique_constrain! :delete_value!
 end
 
 class SingleSum
   include FixedSingleValue
   include NotSummable
   include SumConstraint
-  include NoConstraint
+  include NoConstraints
   include Validation
   include NoValidation
 end
@@ -333,6 +350,8 @@ class DoubleSum
   def to_s
     "#{downward_sum.value}\\#{rightside_sum.value}"
   end
+
+  def unique_constrain!(_candidates) = nil
 
   def_delegators :@rightside_sum, :right_constrain!, :validate_right
   def_delegators :@downward_sum,  :down_constrain!,  :validate_down
