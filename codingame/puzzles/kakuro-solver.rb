@@ -21,7 +21,7 @@ class Kakuro
 
   # cond: the Kakuro has a solution
   def solve!
-    solve_inner!(0, -1)
+    solve_inner!(height - 1, width)
   end
 
   private
@@ -67,9 +67,9 @@ class Kakuro
   # inv: all variables before (i,j) have been assigned (locally) correct values
   def solve_inner!(i, j)
     next_variable = next_variable(i, j)
-    # FIXME: this seems to return prematurely at recursion depth 0,
-    #        if the first line contains no variables and/or there's DoubleSum in the mix
-    return false unless validate_lines_between([i, j], next_variable)
+    unless j == width # don't validate at depth 0
+      return false unless validate_lines_between([i, j], next_variable)
+    end
     return true if next_variable.nil?
 
     i, j = next_variable
@@ -83,36 +83,34 @@ class Kakuro
     false
   end
 
-  # not including (i,j), nil if none left
+  # reverse order traversal, not including (i,j), nil if none left
   def next_variable(i, j)
-    # TODO: invert traversal: bottom to top, right to left
-    #       I can narrow candidates sooner like that (more constraints in the way)
     next_cell  = next_cell(i, j)
     return nil if next_cell.nil?
 
     # search what's left of the current row
     i, j = next_cell
-    var_j = (j...width).find{ |j| grid[i][j].variable? }
+    var_j = j.downto(0).find{ |j| grid[i][j].variable? }
     return i, var_j if var_j
 
-    # search rows below current row
-    (i+1...height).each do |i|
-      var_j = (0...width).find{ |j| grid[i][j].variable? }
+    # search rows above current row
+    (i - 1).downto(0).each do |i|
+      var_j = (width - 1).downto(0).find{ |j| grid[i][j].variable? }
       return i, var_j if var_j
     end
 
     nil
   end
 
-  # returns nil if (i,j) is the last cell
+  # returns nil if (i,j) is the first cell
   def next_cell(i, j)
-    j += 1
-    unless j < width
-      i += 1
-      j = 0
-    end
+    j -= 1
+    return [i,j] if j >= 0
 
-    i < height ? [i, j] : nil
+    i -= 1
+    j = width - 1
+
+    i >= 0 ? [i, j] : nil
   end
 
   # cond: (i,j) is a variable cell
@@ -134,15 +132,20 @@ class Kakuro
   # ret: true if all rows/cols ending between start and end are valid
   def validate_lines_between(start, end_)
     start_i, start_j = start
-    start_j = 0 if start_j == -1
-    end_i, end_j = end_ ? end_ : [height, width]
+    # if the traversal finished, make sure to check row 0 and col 0
+    end_i, end_j = end_ ? end_ : [-1, -1]
 
-    return false unless (start_i...end_i).all?{ |i| validate_row(i) }
+    return false unless
+      (start_i).downto(end_i + 1).all?{ |i| validate_row(i) }
 
-    if end_i >= height - 1
-      start_j = 0 if start_i < height - 1
+    if end_i <= 0 # only check columns if traversal is on first row
+      # check from last column if we started on another row
+      start_j = width - 1 if start_i > 0
+      # don't check the current column
+      end_j += 1
 
-      return false unless (start_j...end_j).all?{ |j| validate_column(j) }
+      return false unless
+        (start_j).downto(end_j).all?{ |j| validate_column(j) }
     end
 
     true
