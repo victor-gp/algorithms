@@ -112,8 +112,8 @@ class Kakuro
     horizontal_available = horizontal_available(i, j)
     vertical_available = vertical_available(i, j)
     candidates = horizontal_available.intersection(vertical_available)
-    check_left_sums!(candidates, i, j, horizontal_available)
-    check_above_sums!(candidates, i, j, vertical_available)
+    check_left_sums(candidates, i, j, horizontal_available)
+    check_above_sums(candidates, i, j, vertical_available)
 
     candidates
   end
@@ -121,8 +121,8 @@ class Kakuro
   def horizontal_available(i, j)
     digits = (1..9).to_a
     left_js, right_js = left_right_ranges(j)
-    horizontal_available_partial!(digits, i, right_js)
-    horizontal_available_partial!(digits, i, left_js)
+    horizontal_available_partial(digits, i, right_js)
+    horizontal_available_partial(digits, i, left_js)
 
     digits
   end
@@ -134,21 +134,19 @@ class Kakuro
     ]
   end
 
-  def horizontal_available_partial!(digits, i, j_range)
+  def horizontal_available_partial(mut_digits, i, j_range)
     j_range.each do |j|
       break if grid[i][j].constrains_right?
-      grid[i][j].unique_constrain!(digits)
-      break if digits.empty?
+      grid[i][j].unique_constrain(mut_digits)
+      break if mut_digits.empty?
     end
-
-    digits
   end
 
   def vertical_available(i, j)
     digits = (1..9).to_a
     above_is, below_is = up_down_ranges(i)
-    vertical_available_partial!(digits, below_is, j)
-    vertical_available_partial!(digits, above_is, j)
+    vertical_available_partial(digits, below_is, j)
+    vertical_available_partial(digits, above_is, j)
 
     digits
   end
@@ -160,17 +158,15 @@ class Kakuro
     ]
   end
 
-  def vertical_available_partial!(digits, i_range, j)
+  def vertical_available_partial(mut_digits, i_range, j)
     i_range.each do |i|
       break if grid[i][j].constrains_down?
-      grid[i][j].unique_constrain!(digits)
-      break if digits.empty?
+      grid[i][j].unique_constrain(mut_digits)
+      break if mut_digits.empty?
     end
-
-    digits
   end
 
-  def check_left_sums!(candidates, i, j, horizontal_available)
+  def check_left_sums(mut_candidates, i, j, horizontal_available)
     one_i = i..i
     left_js, right_js = left_right_ranges(j)
 
@@ -180,12 +176,12 @@ class Kakuro
     return if constraint_j.nil?
     right_acc = accumulate_back_until_constraint(one_i, right_js, :constrains_right?)
 
-    grid[i][constraint_j].right_constrain!(
-      candidates, left_acc + right_acc, nvars, horizontal_available
+    grid[i][constraint_j].right_constrain(
+      mut_candidates, left_acc + right_acc, nvars, horizontal_available
     )
   end
 
-  def check_above_sums!(candidates, i, j, vertical_available)
+  def check_above_sums(mut_candidates, i, j, vertical_available)
     one_j = j..j
     above_is, below_is = up_down_ranges(i)
 
@@ -195,8 +191,8 @@ class Kakuro
     return if constraint_i.nil?
     below_acc = accumulate_back_until_constraint(below_is, one_j, :constrains_down?)
 
-    grid[constraint_i][j].down_constrain!(
-      candidates, above_acc + below_acc, nvars, vertical_available
+    grid[constraint_i][j].down_constrain(
+      mut_candidates, above_acc + below_acc, nvars, vertical_available
     )
   end
 
@@ -225,21 +221,21 @@ class Kakuro
 end
 
 module UniqueConstraint
-  def delete_value!(candidates)
-    candidates.delete(value)
+  def delete_value(mut_candidates)
+    mut_candidates.delete(value)
   end
 end
 
 module SumConstraint
   # cond: available_digits is sorted asc
-  def sum_constrain!(candidates, accumulated, nvars, available_digits)
+  def sum_constrain(mut_candidates, accumulated, nvars, available_digits)
     min_others = available_digits[...nvars].sum
     max_difference = value - accumulated - min_others
     offset = available_digits.length - nvars
     max_others = available_digits.drop(offset).sum
     min_difference = value - accumulated - max_others
 
-    candidates.select!{ |x| min_difference <= x && x <= max_difference }
+    mut_candidates.select!{ |x| min_difference <= x && x <= max_difference }
   end
 end
 
@@ -247,7 +243,7 @@ module NoConstraints
   def constrains_right? = false
   def constrains_down? = false
 
-  def unique_constrain!(_) = nil
+  def unique_constrain(_) = nil
 end
 
 class VariableDigit
@@ -270,8 +266,8 @@ class VariableDigit
     value ? accumulated + value : accumulated
   end
 
-  def unique_constrain!(candidates)
-    value ? delete_value!(candidates) : nil
+  def unique_constrain(mut_candidates)
+    value ? delete_value(mut_candidates) : nil
   end
 end
 
@@ -316,7 +312,7 @@ class FixedDigit
     accumulated + value
   end
 
-  alias :unique_constrain! :delete_value!
+  alias :unique_constrain :delete_value
 end
 
 class SingleSum
@@ -333,7 +329,7 @@ class RightsideSum < SingleSum
 
   def constrains_right? = true
 
-  alias :right_constrain! :sum_constrain!
+  alias :right_constrain :sum_constrain
 end
 
 class DownwardSum < SingleSum
@@ -343,7 +339,7 @@ class DownwardSum < SingleSum
 
   def constrains_down? = true
 
-  alias :down_constrain! :sum_constrain!
+  alias :down_constrain :sum_constrain
 end
 
 class DoubleSum
@@ -362,10 +358,10 @@ class DoubleSum
     "#{downward_sum.value}\\#{rightside_sum.value}"
   end
 
-  def unique_constrain!(_candidates) = nil
+  def unique_constrain(_candidates) = nil
 
-  def_delegators :@rightside_sum, :right_constrain!, :constrains_right?
-  def_delegators :@downward_sum,  :down_constrain!,  :constrains_down?
+  def_delegators :@rightside_sum, :right_constrain, :constrains_right?
+  def_delegators :@downward_sum,  :down_constrain,  :constrains_down?
 end
 
 def with_input
