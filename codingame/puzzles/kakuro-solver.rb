@@ -7,6 +7,7 @@ class Kakuro
     @height = height
     @width = width
     @grid = self.class.parse_grid(grid_s)
+    # TODO: vars_left, vars_above
   end
 
   attr_reader :height, :width
@@ -58,11 +59,16 @@ class Kakuro
         FixedDigit.new(cell_s.to_i)
       end
     end
+
+    def compute_var_counts(grid)
+    end
   end
 
   # inv: all variables before (i,j) have been assigned (locally) correct values
   def solve_inner!(i, j)
     next_variable = next_variable(i, j)
+    # FIXME: this seems to return prematurely at recursion depth 0,
+    #        if the first line contains no variables and/or there's CrossSums in the mix
     return false unless validate_lines_between([i, j], next_variable)
     return true if next_variable.nil?
 
@@ -79,6 +85,8 @@ class Kakuro
 
   # not including (i,j), nil if none left
   def next_variable(i, j)
+    # TODO: invert traversal: bottom to top, right to left
+    #       I can narrow candidates sooner like that (more constraints in the way)
     next_cell  = next_cell(i, j)
     return nil if next_cell.nil?
 
@@ -115,12 +123,14 @@ class Kakuro
     (width - 1).downto(0).each do |j|
       acc = grid[i][j].add_to(acc)
       grid[i][j].right_constrain!(candidates, acc)
+      return candidates if candidates.empty?
     end
 
     acc = 0
     (height - 1).downto(0).each do |i|
       acc = grid[i][j].add_to(acc)
       grid[i][j].down_constrain!(candidates, acc)
+      return candidates if candidates.empty?
     end
 
     candidates
@@ -181,6 +191,7 @@ end
 
 module SumConstraint
   def sum_constrain!(candidates, accumulated)
+    # TODO: find a lower bound too, with unassigned_vars and assuming candidates is sorted
     difference = value - accumulated
     candidates.select{ |x| x <= difference }
   end
