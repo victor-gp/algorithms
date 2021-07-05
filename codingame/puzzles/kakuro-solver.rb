@@ -118,17 +118,11 @@ class Kakuro
   # cond: (i,j) is a variable cell
   def candidates_for(i, j)
     candidates = (1..9).to_a
-
-    acc = 0
-    (width - 1).downto(0).each do |j|
-      acc = grid[i][j].add_to(acc)
+    reverse_row_accumulation(i) do |i, j, acc|
       grid[i][j].right_constrain!(candidates, acc)
       return candidates if candidates.empty?
     end
-
-    acc = 0
-    (height - 1).downto(0).each do |i|
-      acc = grid[i][j].add_to(acc)
+    reverse_column_accumulation(j) do |i, j, acc|
       grid[i][j].down_constrain!(candidates, acc)
       return candidates if candidates.empty?
     end
@@ -155,25 +149,33 @@ class Kakuro
   end
 
   def validate_row(i)
-    acc = 0
-    (width - 1).downto(0).each do |j|
-      acc = grid[i][j].add_to(acc)
-      return false unless
-        grid[i][j].validate_right(acc)
+    reverse_row_accumulation(i) do |i, j, acc|
+      return false unless grid[i][j].validate_right(acc)
     end
-
     true
   end
 
   def validate_column(j)
+    reverse_column_accumulation(j) do |i, j, acc|
+      return false unless grid[i][j].validate_down(acc)
+    end
+    true
+  end
+
+  def reverse_row_accumulation(i)
+    acc = 0
+    (width - 1).downto(0).each do |j|
+      acc = grid[i][j].add_to(acc)
+      yield i, j, acc
+    end
+  end
+
+  def reverse_column_accumulation(j)
     acc = 0
     (height - 1).downto(0).each do |i|
       acc = grid[i][j].add_to(acc)
-      return false unless
-        grid[i][j].validate_down(acc)
+      yield i, j, acc
     end
-
-    true
   end
 end
 
