@@ -51,7 +51,7 @@ class Kakuro
       elsif /^\\(?<sum>\d+)$/ =~ cell_s
         RightsideSum.new(sum.to_i)
       elsif /^(?<sumL>\d+)\\(?<sumR>\d+)$/ =~ cell_s
-        CrossSums.new(
+        DoubleSum.new(
           DownwardSum.new(sumL.to_i),
           RightsideSum.new(sumR.to_i)
         )
@@ -68,7 +68,7 @@ class Kakuro
   def solve_inner!(i, j)
     next_variable = next_variable(i, j)
     # FIXME: this seems to return prematurely at recursion depth 0,
-    #        if the first line contains no variables and/or there's CrossSums in the mix
+    #        if the first line contains no variables and/or there's DoubleSum in the mix
     return false unless validate_lines_between([i, j], next_variable)
     return true if next_variable.nil?
 
@@ -286,14 +286,16 @@ class FixedDigit
   alias :down_constrain!  :value_constrain!
 end
 
-class RightsideSum
+class SingleSum
   include FixedSingleValue
   include NotSummable
   include SumConstraint
   include NoConstraint
   include Validation
   include NoValidation
+end
 
+class RightsideSum < SingleSum
   def to_s
     "\\#{value}"
   end
@@ -302,14 +304,7 @@ class RightsideSum
   alias :validate_right   :validate
 end
 
-class DownwardSum
-  include FixedSingleValue
-  include NotSummable
-  include SumConstraint
-  include NoConstraint
-  include Validation
-  include NoValidation
-
+class DownwardSum < SingleSum
   def to_s
     "#{value}\\"
   end
@@ -318,7 +313,7 @@ class DownwardSum
   alias :validate_down   :validate
 end
 
-class CrossSums
+class DoubleSum
   include Fixed
   include NotSummable
   extend  Forwardable
