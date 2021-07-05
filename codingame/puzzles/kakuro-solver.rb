@@ -109,25 +109,33 @@ class Kakuro
 
   # cond: (i,j) is a variable cell
   def candidates_for(i, j)
-    horizontal_unused = horizontal_unused(i, j)
-    vertical_unused = vertical_unused(i, j)
-    candidates = horizontal_unused.clone.intersection(vertical_unused)
-    check_left_sums!(candidates, i, j, horizontal_unused)
-    check_above_sums!(candidates, i, j, vertical_unused)
+    horizontal_available = horizontal_available(i, j)
+    vertical_available = vertical_available(i, j)
+    candidates = horizontal_available.intersection(vertical_available)
+    check_left_sums!(candidates, i, j, horizontal_available)
+    check_above_sums!(candidates, i, j, vertical_available)
 
     candidates
   end
 
-  def horizontal_unused(i, j)
+  def horizontal_available(i, j)
     digits = (1..9).to_a
+    left_js, right_js = left_right_ranges(j)
+    horizontal_available_partial!(digits, i, right_js)
+    horizontal_available_partial!(digits, i, left_js)
 
-    (j+1...width).each do |j|
-      break if grid[i][j].constrains_right?
-      grid[i][j].unique_constrain!(digits)
-      break if digits.empty?
-    end
+    digits
+  end
 
-    (j-1).downto(0).each do |j|
+  def left_right_ranges(j)
+    [
+      (j - 1).downto(0),
+      j + 1...width
+    ]
+  end
+
+  def horizontal_available_partial!(digits, i, j_range)
+    j_range.each do |j|
       break if grid[i][j].constrains_right?
       grid[i][j].unique_constrain!(digits)
       break if digits.empty?
@@ -136,16 +144,24 @@ class Kakuro
     digits
   end
 
-  def vertical_unused(i, j)
+  def vertical_available(i, j)
     digits = (1..9).to_a
+    above_is, below_is = up_down_ranges(i)
+    vertical_available_partial!(digits, below_is, j)
+    vertical_available_partial!(digits, above_is, j)
 
-    (i+1...height).each do |i|
-      break if grid[i][j].constrains_down?
-      grid[i][j].unique_constrain!(digits)
-      break if digits.empty?
-    end
+    digits
+  end
 
-    (i-1).downto(0).each do |i|
+  def up_down_ranges(i)
+    [
+      (i - 1).downto(0),
+      i + 1...height
+    ]
+  end
+
+  def vertical_available_partial!(digits, i_range, j)
+    i_range.each do |i|
       break if grid[i][j].constrains_down?
       grid[i][j].unique_constrain!(digits)
       break if digits.empty?
@@ -154,50 +170,57 @@ class Kakuro
     digits
   end
 
-  def check_left_sums!(candidates, i, j, horizontal_unused)
-    is = i..i
-    right_js = (j + 1)...width
-    _, _, right_acc, _ = accumulate_until_constraint(is, right_js, :constrains_right?)
+  def check_left_sums!(candidates, i, j, horizontal_available)
+    one_i = i..i
+    left_js, right_js = left_right_ranges(j)
 
-    left_js = (j - 1).downto(0)
-    _, sum_j, left_acc, nvars = accumulate_until_constraint(is, left_js, :constrains_right?)
+    _, constraint_j, left_acc, nvars =
+      accumulate_until_constraint(one_i, left_js, :constrains_right?)
 
-    return if sum_j.nil?
+    return if constraint_j.nil?
+    right_acc = accumulate_back_until_constraint(one_i, right_js, :constrains_right?)
 
-    grid[i][sum_j].right_constrain!(
-      candidates, left_acc + right_acc, nvars, horizontal_unused
+    grid[i][constraint_j].right_constrain!(
+      candidates, left_acc + right_acc, nvars, horizontal_available
     )
   end
 
-  def check_above_sums!(candidates, i, j, vertical_unused)
-    js = j..j
-    below_is = (i + 1)...height
-    _, _, below_acc, _ = accumulate_until_constraint(below_is, js, :constrains_down?)
+  def check_above_sums!(candidates, i, j, vertical_available)
+    one_j = j..j
+    above_is, below_is = up_down_ranges(i)
 
-    above_is = (i - 1).downto(0)
-    sum_i, _, above_acc, nvars = accumulate_until_constraint(above_is, js, :constrains_down?)
+    constraint_i, _, above_acc, nvars =
+      accumulate_until_constraint(above_is, one_j, :constrains_down?)
 
-    return if sum_i.nil?
+    return if constraint_i.nil?
+    below_acc = accumulate_back_until_constraint(below_is, one_j, :constrains_down?)
 
-    grid[sum_i][j].down_constrain!(
-      candidates, above_acc + below_acc, nvars, vertical_unused
+    grid[constraint_i][j].down_constrain!(
+      candidates, above_acc + below_acc, nvars, vertical_available
     )
   end
 
-  # cond: one parameter or the other has a single element
+  # cond: one of the ranges is unitary
   def accumulate_until_constraint(i_range, j_range, end_marker)
     acc = 0
     nvars = 0
+
     i_range.each do |i|
       j_range.each do |j|
-        return [i, j, acc, nvars] if
-          grid[i][j].send(end_marker)
+        return [i, j, acc, nvars] if grid[i][j].send(end_marker)
+
         acc = grid[i][j].add_to(acc)
         nvars += 1 if grid[i][j].variable?
       end
     end
 
     return [nil, nil, acc, nvars]
+  end
+
+  # for traversing already visited cells, no need to keep the end position nor nvars (=0)
+  def accumulate_back_until_constraint(i_range, j_range, end_marker)
+    _, _, acc, _ = accumulate_until_constraint(i_range, j_range, end_marker)
+    acc
   end
 end
 
@@ -208,12 +231,12 @@ module UniqueConstraint
 end
 
 module SumConstraint
-  # cond: unused_digits is sorted asc
-  def sum_constrain!(candidates, accumulated, nvars, unused_digits)
-    min_others = unused_digits[...nvars].sum
+  # cond: available_digits is sorted asc
+  def sum_constrain!(candidates, accumulated, nvars, available_digits)
+    min_others = available_digits[...nvars].sum
     max_difference = value - accumulated - min_others
-    offset = unused_digits.length - nvars
-    max_others = unused_digits.drop(offset).sum
+    offset = available_digits.length - nvars
+    max_others = available_digits.drop(offset).sum
     min_difference = value - accumulated - max_others
 
     candidates.select!{ |x| min_difference <= x && x <= max_difference }
