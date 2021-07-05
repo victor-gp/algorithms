@@ -120,7 +120,15 @@ class Kakuro
 
   def horizontal_unused(i, j)
     digits = (1..9).to_a
-    (0...width).each do |j|
+
+    (j+1...width).each do |j|
+      break if grid[i][j].constrains_right?
+      grid[i][j].unique_constrain!(digits)
+      break if digits.empty?
+    end
+
+    (j-1).downto(0).each do |j|
+      break if grid[i][j].constrains_right?
       grid[i][j].unique_constrain!(digits)
       break if digits.empty?
     end
@@ -130,7 +138,15 @@ class Kakuro
 
   def vertical_unused(i, j)
     digits = (1..9).to_a
-    (0...height).each do |i|
+
+    (i+1...height).each do |i|
+      break if grid[i][j].constrains_down?
+      grid[i][j].unique_constrain!(digits)
+      break if digits.empty?
+    end
+
+    (i-1).downto(0).each do |i|
+      break if grid[i][j].constrains_down?
       grid[i][j].unique_constrain!(digits)
       break if digits.empty?
     end
@@ -139,41 +155,49 @@ class Kakuro
   end
 
   def check_left_sums!(candidates, i, j, horizontal_unused)
-    i = i..i
-    js = (width - 1).downto(0)
+    is = i..i
+    right_js = (j + 1)...width
+    _, _, right_acc, _ = accumulate_until_constraint(is, right_js, :constrains_right?)
 
-    reverse_line_accumulation(i, js) do |i, j, acc, nvars|
-      grid[i][j].right_constrain!(
-        candidates, acc, nvars, horizontal_unused
-      )
-    end
+    left_js = (j - 1).downto(0)
+    _, sum_j, left_acc, nvars = accumulate_until_constraint(is, left_js, :constrains_right?)
+
+    return if sum_j.nil?
+
+    grid[i][sum_j].right_constrain!(
+      candidates, left_acc + right_acc, nvars, horizontal_unused
+    )
   end
 
   def check_above_sums!(candidates, i, j, vertical_unused)
-    is = (height - 1).downto(0)
-    j = j..j
+    js = j..j
+    below_is = (i + 1)...height
+    _, _, below_acc, _ = accumulate_until_constraint(below_is, js, :constrains_down?)
 
-    reverse_line_accumulation(is, j) do |i, j, acc, nvars|
-      grid[i][j].down_constrain!( # I don't need to check to the left anymore, no? return true straightaway
-        candidates, acc, nvars, vertical_unused
-      )
-    end
+    above_is = (i - 1).downto(0)
+    sum_i, _, above_acc, nvars = accumulate_until_constraint(above_is, js, :constrains_down?)
+
+    return if sum_i.nil?
+
+    grid[sum_i][j].down_constrain!(
+      candidates, above_acc + below_acc, nvars, vertical_unused
+    )
   end
 
-
-  # one parameter or the other has to be empty for this to be "line"
-  # TODO: breaks early if the do block returns false (when candidates.empty?)
-  def reverse_line_accumulation(i_range, j_range)
+  # cond: one parameter or the other has a single element
+  def accumulate_until_constraint(i_range, j_range, end_marker)
     acc = 0
     nvars = 0
     i_range.each do |i|
       j_range.each do |j|
+        return [i, j, acc, nvars] if
+          grid[i][j].send(end_marker)
         acc = grid[i][j].add_to(acc)
         nvars += 1 if grid[i][j].variable?
-        yield i, j, acc, nvars # break unless yield ?
-        # break if candidates.length < nvars
       end
     end
+
+    return [nil, nil, acc, nvars]
   end
 end
 
@@ -186,7 +210,6 @@ end
 module SumConstraint
   # cond: unused_digits is sorted asc
   def sum_constrain!(candidates, accumulated, nvars, unused_digits)
-    nvars -= 1 # other vars, w/o the one being assigned
     min_others = unused_digits[...nvars].sum
     max_difference = value - accumulated - min_others
     offset = unused_digits.length - nvars
@@ -198,12 +221,10 @@ module SumConstraint
 end
 
 module NoConstraints
-  def constrain_not_1(_) = nil
-  def constrain_not_4(_, _, _, _) = nil
+  def constrains_right? = false
+  def constrains_down? = false
 
-  alias :unique_constrain! :constrain_not_1
-  alias :right_constrain!  :constrain_not_4
-  alias :down_constrain!   :constrain_not_4
+  def unique_constrain!(_) = nil
 end
 
 class VariableDigit
@@ -287,6 +308,8 @@ class RightsideSum < SingleSum
     "\\#{value}"
   end
 
+  def constrains_right? = true
+
   alias :right_constrain! :sum_constrain!
 end
 
@@ -294,6 +317,8 @@ class DownwardSum < SingleSum
   def to_s
     "#{value}\\"
   end
+
+  def constrains_down? = true
 
   alias :down_constrain! :sum_constrain!
 end
@@ -316,8 +341,8 @@ class DoubleSum
 
   def unique_constrain!(_candidates) = nil
 
-  def_delegator :@rightside_sum, :right_constrain!
-  def_delegator :@downward_sum,  :down_constrain!
+  def_delegators :@rightside_sum, :right_constrain!, :constrains_right?
+  def_delegators :@downward_sum,  :down_constrain!,  :constrains_down?
 end
 
 def with_input
