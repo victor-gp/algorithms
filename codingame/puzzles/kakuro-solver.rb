@@ -109,47 +109,70 @@ class Kakuro
 
   # cond: (i,j) is a variable cell
   def candidates_for(i, j)
-    candidates = (1..9).to_a
-    unique_constrain!(candidates, i, j)
-    sums_constrain!(candidates, i, j)
+    horizontal_unused = horizontal_unused(i, j)
+    vertical_unused = vertical_unused(i, j)
+    candidates = horizontal_unused.clone.intersection(vertical_unused)
+    check_left_sums!(candidates, i, j, horizontal_unused)
+    check_above_sums!(candidates, i, j, vertical_unused)
+
     candidates
   end
 
-  def unique_constrain!(candidates, i, j)
-    (0...width).each{ |j| grid[i][j].unique_constrain!(candidates) }
-    (0...height).each{ |i| grid[i][j].unique_constrain!(candidates) }
-  end
-
-  def sums_constrain!(candidates, i, j)
-    nvars = 0
-    reverse_row_accumulation(i) do |i, j, acc|
-      nvars += 1 if grid[i][j].variable?
-      grid[i][j].right_constrain!(candidates, acc, nvars)
-      return candidates if candidates.empty?
+  def horizontal_unused(i, j)
+    digits = (1..9).to_a
+    (0...width).each do |j|
+      grid[i][j].unique_constrain!(digits)
+      break if digits.empty?
     end
 
-    nvars = 0
-    reverse_column_accumulation(j) do |i, j, acc|
-      nvars += 1 if grid[i][j].variable?
-      grid[i][j].down_constrain!(candidates, acc, nvars)
-      return candidates if candidates.empty?
-    end
-
+    digits
   end
 
-  def reverse_row_accumulation(i)
+  def vertical_unused(i, j)
+    digits = (1..9).to_a
+    (0...height).each do |i|
+      grid[i][j].unique_constrain!(digits)
+      break if digits.empty?
+    end
+
+    digits
+  end
+
+  def check_left_sums!(candidates, i, j, horizontal_unused)
+    i = i..i
+    js = (width - 1).downto(0)
+
+    reverse_line_accumulation(i, js) do |i, j, acc, nvars|
+      grid[i][j].right_constrain!(
+        candidates, acc, nvars, horizontal_unused
+      )
+    end
+  end
+
+  def check_above_sums!(candidates, i, j, vertical_unused)
+    is = (height - 1).downto(0)
+    j = j..j
+
+    reverse_line_accumulation(is, j) do |i, j, acc, nvars|
+      grid[i][j].down_constrain!( # I don't need to check to the left anymore, no? return true straightaway
+        candidates, acc, nvars, vertical_unused
+      )
+    end
+  end
+
+
+  # one parameter or the other has to be empty for this to be "line"
+  # TODO: breaks early if the do block returns false (when candidates.empty?)
+  def reverse_line_accumulation(i_range, j_range)
     acc = 0
-    (width - 1).downto(0).each do |j|
-      acc = grid[i][j].add_to(acc)
-      yield i, j, acc
-    end
-  end
-
-  def reverse_column_accumulation(j)
-    acc = 0
-    (height - 1).downto(0).each do |i|
-      acc = grid[i][j].add_to(acc)
-      yield i, j, acc
+    nvars = 0
+    i_range.each do |i|
+      j_range.each do |j|
+        acc = grid[i][j].add_to(acc)
+        nvars += 1 if grid[i][j].variable?
+        yield i, j, acc, nvars # break unless yield ?
+        # break if candidates.length < nvars
+      end
     end
   end
 end
@@ -161,26 +184,26 @@ module UniqueConstraint
 end
 
 module SumConstraint
-  # cond: candidates is sorted
-  def sum_constrain!(candidates, accumulated, nvars)
+  # cond: unused_digits is sorted asc
+  def sum_constrain!(candidates, accumulated, nvars, unused_digits)
     nvars -= 1 # other vars, w/o the one being assigned
-    min_others = candidates[...nvars].sum
+    min_others = unused_digits[...nvars].sum
     max_difference = value - accumulated - min_others
-    offset = candidates.length - nvars
-    max_others = candidates[offset..].sum
+    offset = unused_digits.length - nvars
+    max_others = unused_digits.drop(offset).sum
     min_difference = value - accumulated - max_others
 
-    candidates.select{ |x| min_difference <= x && x <= max_difference }
+    candidates.select!{ |x| min_difference <= x && x <= max_difference }
   end
 end
 
 module NoConstraints
-  def constrain_not_1(_candidates) = nil
-  def constrain_not_3(_candidates, _accumulated, _nvars) = nil
+  def constrain_not_1(_) = nil
+  def constrain_not_4(_, _, _, _) = nil
 
   alias :unique_constrain! :constrain_not_1
-  alias :right_constrain!  :constrain_not_3
-  alias :down_constrain!   :constrain_not_3
+  alias :right_constrain!  :constrain_not_4
+  alias :down_constrain!   :constrain_not_4
 end
 
 class VariableDigit
@@ -197,7 +220,7 @@ class VariableDigit
     value ? value.to_s : '?'
   end
 
-  def variable? = true
+  def variable? = value.nil?
 
   def add_to(accumulated)
     value ? accumulated + value : accumulated
@@ -302,6 +325,7 @@ def with_input
     require 'byebug'
     yield File.open('my-test.in')
   else
+    def byebug = nil
     yield $stdin
   end
 end
