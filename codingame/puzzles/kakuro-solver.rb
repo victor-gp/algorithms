@@ -60,12 +60,9 @@ class Kakuro
     end
   end
 
-  # inv: all variables before (i,j) have been assigned (locally) correct values
+  # inv: all variables past (i,j) have been assigned (locally) correct values
   def solve_inner!(i, j)
     next_variable = next_variable(i, j)
-    unless j == width # don't validate at depth 0
-      return false unless validate_lines_between([i, j], next_variable)
-    end
     return true if next_variable.nil?
 
     i, j = next_variable
@@ -79,7 +76,7 @@ class Kakuro
     false
   end
 
-  # reverse order traversal, not including (i,j), nil if none left
+  # reverse order traversal, not including (i,j), returns nil if none left
   def next_variable(i, j)
     next_cell  = next_cell(i, j)
     return nil if next_cell.nil?
@@ -136,43 +133,7 @@ class Kakuro
       grid[i][j].down_constrain!(candidates, acc, nvars)
       return candidates if candidates.empty?
     end
-  end
 
-  # cond: start is a valid cell, end may be nil (finished traversal)
-  # ret: true if all rows/cols ending between start and end are valid
-  def validate_lines_between(start, end_)
-    start_i, start_j = start
-    # if the traversal finished, make sure to check row 0 and col 0
-    end_i, end_j = end_ ? end_ : [-1, -1]
-
-    return false unless
-      (start_i).downto(end_i + 1).all?{ |i| validate_row(i) }
-
-    if end_i <= 0 # only check columns if traversal is on first row
-      # check from last column if we started on another row
-      start_j = width - 1 if start_i > 0
-      # don't check the current column
-      end_j += 1
-
-      return false unless
-        (start_j).downto(end_j).all?{ |j| validate_column(j) }
-    end
-
-    true
-  end
-
-  def validate_row(i)
-    reverse_row_accumulation(i) do |i, j, acc|
-      return false unless grid[i][j].validate_right(acc)
-    end
-    true
-  end
-
-  def validate_column(j)
-    reverse_column_accumulation(j) do |i, j, acc|
-      return false unless grid[i][j].validate_down(acc)
-    end
-    true
   end
 
   def reverse_row_accumulation(i)
@@ -221,25 +182,9 @@ module NoConstraints
   alias :down_constrain!   :constrain_not_3
 end
 
-module Validation
-  def validate(accumulated)
-    value == accumulated
-  end
-end
-
-module NoValidation
-  def validate_not(accumulated)
-    true
-  end
-
-  alias :validate_right :validate_not
-  alias :validate_down  :validate_not
-end
-
 class VariableDigit
   include UniqueConstraint
   include NoConstraints
-  include NoValidation
 
   def initialize
     @value = nil
@@ -276,7 +221,6 @@ class X
   include Fixed
   include NotSummable
   include NoConstraints
-  include NoValidation
 
   def to_s = 'X'
 end
@@ -295,7 +239,6 @@ class FixedDigit
   include FixedSingleValue
   include UniqueConstraint
   include NoConstraints
-  include NoValidation
 
   def to_s
     value.to_s
@@ -313,8 +256,6 @@ class SingleSum
   include NotSummable
   include SumConstraint
   include NoConstraints
-  include Validation
-  include NoValidation
 end
 
 class RightsideSum < SingleSum
@@ -323,7 +264,6 @@ class RightsideSum < SingleSum
   end
 
   alias :right_constrain! :sum_constrain!
-  alias :validate_right   :validate
 end
 
 class DownwardSum < SingleSum
@@ -332,7 +272,6 @@ class DownwardSum < SingleSum
   end
 
   alias :down_constrain! :sum_constrain!
-  alias :validate_down   :validate
 end
 
 class DoubleSum
@@ -353,8 +292,8 @@ class DoubleSum
 
   def unique_constrain!(_candidates) = nil
 
-  def_delegators :@rightside_sum, :right_constrain!, :validate_right
-  def_delegators :@downward_sum,  :down_constrain!,  :validate_down
+  def_delegator :@rightside_sum, :right_constrain!
+  def_delegator :@downward_sum,  :down_constrain!
 end
 
 
