@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 # https://www.codingame.com/training/hard/kakuro-solver
 
 require 'forwardable'
@@ -296,9 +297,20 @@ class DoubleSum
   def_delegator :@downward_sum,  :down_constrain!
 end
 
+def with_input
+  if File.file?('my-test.in')
+    require 'byebug'
+    yield File.open('my-test.in')
+  else
+    yield $stdin
+  end
+end
 
-height, width = gets.split.map(&:to_i)
-grid_s = $stdin.read
-kakuro = Kakuro.new(height, width, grid_s)
+kakuro = with_input do |input|
+  height, width = input.gets.split.map(&:to_i)
+  grid_s = input.read
+
+  Kakuro.new(height, width, grid_s)
+end
 kakuro.solve!
 puts kakuro
