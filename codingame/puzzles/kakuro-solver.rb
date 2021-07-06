@@ -51,7 +51,7 @@ class Kakuro
       elsif /^\\(?<sum>\d+)$/ =~ cell_s
         RightsideSum.new(sum.to_i)
       elsif /^(?<sumL>\d+)\\(?<sumR>\d+)$/ =~ cell_s
-        DoubleSum.new(
+        CrossSum.new(
           DownwardSum.new(sumL.to_i),
           RightsideSum.new(sumR.to_i)
         )
@@ -69,11 +69,11 @@ class Kakuro
     i, j = next_variable
     candidates = candidates_for(i, j)
     candidates.each do |candidate|
-      grid[i][j].value = candidate
+      grid[i][j].assign(candidate)
       return true if solve_inner!(i, j)
     end
 
-    grid[i][j].value = nil
+    grid[i][j].clear
     false
   end
 
@@ -136,7 +136,7 @@ class Kakuro
 
   def horizontal_available_partial(mut_digits, i, j_range)
     j_range.each do |j|
-      break if grid[i][j].constrains_right?
+      break if grid[i][j].lateral_limit?
       grid[i][j].unique_constrain(mut_digits)
       break if mut_digits.empty?
     end
@@ -160,7 +160,7 @@ class Kakuro
 
   def vertical_available_partial(mut_digits, i_range, j)
     i_range.each do |i|
-      break if grid[i][j].constrains_down?
+      break if grid[i][j].vertical_limit?
       grid[i][j].unique_constrain(mut_digits)
       break if mut_digits.empty?
     end
@@ -171,10 +171,10 @@ class Kakuro
     left_js, right_js = left_right_ranges(j)
 
     _, constraint_j, left_acc, nvars =
-      accumulate_until_constraint(one_i, left_js, :constrains_right?)
+      accumulate_until_limit(one_i, left_js, :lateral_limit?)
 
     return if constraint_j.nil?
-    right_acc = accumulate_back_until_constraint(one_i, right_js, :constrains_right?)
+    right_acc = accumulate_back_until_limit(one_i, right_js, :lateral_limit?)
 
     grid[i][constraint_j].right_constrain(
       mut_candidates, left_acc + right_acc, nvars, horizontal_available
@@ -186,10 +186,10 @@ class Kakuro
     above_is, below_is = up_down_ranges(i)
 
     constraint_i, _, above_acc, nvars =
-      accumulate_until_constraint(above_is, one_j, :constrains_down?)
+      accumulate_until_limit(above_is, one_j, :vertical_limit?)
 
     return if constraint_i.nil?
-    below_acc = accumulate_back_until_constraint(below_is, one_j, :constrains_down?)
+    below_acc = accumulate_back_until_limit(below_is, one_j, :vertical_limit?)
 
     grid[constraint_i][j].down_constrain(
       mut_candidates, above_acc + below_acc, nvars, vertical_available
@@ -197,13 +197,13 @@ class Kakuro
   end
 
   # cond: one of the ranges is unitary
-  def accumulate_until_constraint(i_range, j_range, end_marker)
+  def accumulate_until_limit(i_range, j_range, limit_marker)
     acc = 0
     nvars = 0
 
     i_range.each do |i|
       j_range.each do |j|
-        return [i, j, acc, nvars] if grid[i][j].send(end_marker)
+        return [i, j, acc, nvars] if grid[i][j].send(limit_marker)
 
         acc = grid[i][j].add_to(acc)
         nvars += 1 if grid[i][j].variable?
@@ -214,8 +214,8 @@ class Kakuro
   end
 
   # for traversing already visited cells, no need to keep the end position nor nvars (=0)
-  def accumulate_back_until_constraint(i_range, j_range, end_marker)
-    _, _, acc, _ = accumulate_until_constraint(i_range, j_range, end_marker)
+  def accumulate_back_until_limit(i_range, j_range, limit_marker)
+    _, _, acc, _ = accumulate_until_limit(i_range, j_range, limit_marker)
     acc
   end
 end
@@ -240,8 +240,8 @@ module SumConstraint
 end
 
 module NoConstraints
-  def constrains_right? = false
-  def constrains_down? = false
+  def lateral_limit? = false
+  def vertical_limit? = false
 
   def unique_constrain(_) = nil
 end
@@ -254,10 +254,16 @@ class VariableDigit
     @value = nil
   end
 
-  attr_accessor :value
-
   def to_s
     value ? value.to_s : '?'
+  end
+
+  def assign(digit)
+    @value = digit
+  end
+
+  def clear
+    @value = nil
   end
 
   def variable? = value.nil?
@@ -269,6 +275,11 @@ class VariableDigit
   def unique_constrain(mut_candidates)
     value ? delete_value(mut_candidates) : nil
   end
+
+  private
+
+  attr_reader :value
+
 end
 
 module Fixed
@@ -287,6 +298,11 @@ class X
   include NoConstraints
 
   def to_s = 'X'
+
+  def lateral_limit?  = true
+  def vertical_limit? = true
+  def right_constrain = nil
+  def down_constrain  = nil
 end
 
 module FixedSingleValue
@@ -327,7 +343,7 @@ class RightsideSum < SingleSum
     "\\#{value}"
   end
 
-  def constrains_right? = true
+  def lateral_limit? = true
 
   alias :right_constrain :sum_constrain
 end
@@ -337,14 +353,13 @@ class DownwardSum < SingleSum
     "#{value}\\"
   end
 
-  def constrains_down? = true
+  def vertical_limit? = true
 
   alias :down_constrain :sum_constrain
 end
 
-class DoubleSum
+class CrossSum
   include Fixed
-  include NotSummable
   extend  Forwardable
 
   def initialize(downward_sum, rightside_sum)
@@ -358,10 +373,8 @@ class DoubleSum
     "#{downward_sum.value}\\#{rightside_sum.value}"
   end
 
-  def unique_constrain(_candidates) = nil
-
-  def_delegators :@rightside_sum, :right_constrain, :constrains_right?
-  def_delegators :@downward_sum,  :down_constrain,  :constrains_down?
+  def_delegators :@rightside_sum, :right_constrain, :lateral_limit?
+  def_delegators :@downward_sum,  :down_constrain,  :vertical_limit?
 end
 
 def with_input
