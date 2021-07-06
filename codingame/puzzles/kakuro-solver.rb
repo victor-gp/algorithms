@@ -48,6 +48,8 @@ class Kakuro
         VariableDigit.new
       elsif cell_s == 'X'
         X.new
+      # "\\" is the backslash character escaped
+      # "(?<sum>\d+)" is a named capture group that matches unsigned integers
       elsif /^(?<sum>\d+)\\$/ =~ cell_s
         DownwardSum.new(sum.to_i)
       elsif /^\\(?<sum>\d+)$/ =~ cell_s
@@ -115,7 +117,7 @@ class Kakuro
     vertical_available = vertical_available(i, j)
     candidates = horizontal_available.intersection(vertical_available)
     check_left_sums(candidates, i, j, horizontal_available)
-    check_above_sums(candidates, i, j, vertical_available)
+    check_upper_sums(candidates, i, j, vertical_available)
 
     candidates
   end
@@ -146,9 +148,9 @@ class Kakuro
 
   def vertical_available(i, j)
     digits = (1..9).to_a
-    above_is, below_is = up_down_ranges(i)
-    vertical_available_partial(digits, below_is, j)
-    vertical_available_partial(digits, above_is, j)
+    upper_is, lower_is = up_down_ranges(i)
+    vertical_available_partial(digits, lower_is, j)
+    vertical_available_partial(digits, upper_is, j)
 
     digits
   end
@@ -183,18 +185,18 @@ class Kakuro
     )
   end
 
-  def check_above_sums(mut_candidates, i, j, vertical_available)
+  def check_upper_sums(mut_candidates, i, j, vertical_available)
     one_j = j..j
-    above_is, below_is = up_down_ranges(i)
+    upper_is, lower_is = up_down_ranges(i)
 
-    constraint_i, _, above_acc, nvars =
-      accumulate_until_limit(above_is, one_j, :vertical_limit?)
+    constraint_i, _, upper_acc, nvars =
+      accumulate_until_limit(upper_is, one_j, :vertical_limit?)
 
     return if constraint_i.nil?
-    below_acc = accumulate_back_until_limit(below_is, one_j, :vertical_limit?)
+    lower_acc = accumulate_back_until_limit(lower_is, one_j, :vertical_limit?)
 
     grid[constraint_i][j].down_constrain(
-      mut_candidates, above_acc + below_acc, nvars, vertical_available
+      mut_candidates, upper_acc + lower_acc, nvars, vertical_available
     )
   end
 
@@ -270,11 +272,11 @@ class X
 
   def lateral_limit?  = true
   def vertical_limit? = true
-  def right_constrain = nil
-  def down_constrain  = nil
+  def right_constrain(_, _, _, _) = nil
+  def down_constrain(_, _, _, _)  = nil
 end
 
-module FixedSingleValue
+class FixedSingleValue
   include Fixed
 
   def initialize(value)
@@ -284,8 +286,7 @@ module FixedSingleValue
   attr_reader :value
 end
 
-class FixedDigit
-  include FixedSingleValue
+class FixedDigit < FixedSingleValue
   include NoLimit
 
   def to_s
@@ -301,8 +302,7 @@ class FixedDigit
   end
 end
 
-class SingleSum
-  include FixedSingleValue
+class SingleSum  < FixedSingleValue
   include NoLimit
 
   # required when a lateral limit is traversed vertically or viceversa
@@ -313,15 +313,20 @@ class SingleSum
   # idem
   def unique_constrain(_) = nil
 
-  # cond: available_digits is sorted asc
+  # cond: available_digits is sorted asc,
+  #       nvars not including the cell currently being assigned
   def sum_constrain(mut_candidates, accumulated, nvars, available_digits)
-    min_others = available_digits[...nvars].sum
-    max_difference = value - accumulated - min_others
-    offset = available_digits.length - nvars
-    max_others = available_digits.drop(offset).sum
-    min_difference = value - accumulated - max_others
+    if nvars == 0
+      expected = value - accumulated
+      mut_candidates.select!{ |c| c == expected }
+      return
+    end
 
-    mut_candidates.select!{ |x| min_difference <= x && x <= max_difference }
+    min_others = accumulated + available_digits[...nvars].sum
+    upper_bound = value - min_others
+    max_others = accumulated + available_digits[-nvars..].sum
+    lower_bound = value - max_others
+    mut_candidates.select!{ |c| lower_bound <= c && c <= upper_bound }
   end
 end
 
