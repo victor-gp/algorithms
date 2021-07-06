@@ -1,5 +1,7 @@
 # frozen_string_literal: true
+
 # https://www.codingame.com/training/hard/kakuro-solver
+# https://en.wikipedia.org/wiki/Kakuro
 
 require 'forwardable'
 
@@ -220,39 +222,19 @@ class Kakuro
   end
 end
 
-module UniqueConstraint
-  def delete_value(mut_candidates)
-    mut_candidates.delete(value)
-  end
-end
-
-module SumConstraint
-  # cond: available_digits is sorted asc
-  def sum_constrain(mut_candidates, accumulated, nvars, available_digits)
-    min_others = available_digits[...nvars].sum
-    max_difference = value - accumulated - min_others
-    offset = available_digits.length - nvars
-    max_others = available_digits.drop(offset).sum
-    min_difference = value - accumulated - max_others
-
-    mut_candidates.select!{ |x| min_difference <= x && x <= max_difference }
-  end
-end
-
-module NoConstraints
+module NoLimit
   def lateral_limit? = false
   def vertical_limit? = false
-
-  def unique_constrain(_) = nil
 end
 
 class VariableDigit
-  include UniqueConstraint
-  include NoConstraints
+  include NoLimit
 
   def initialize
     @value = nil
   end
+
+  attr_reader :value
 
   def to_s
     value ? value.to_s : '?'
@@ -273,29 +255,16 @@ class VariableDigit
   end
 
   def unique_constrain(mut_candidates)
-    value ? delete_value(mut_candidates) : nil
+    mut_candidates.delete(value) if value
   end
-
-  private
-
-  attr_reader :value
-
 end
 
 module Fixed
   def variable? = false
 end
 
-module NotSummable
-  def add_to(accumulated)
-    accumulated
-  end
-end
-
 class X
   include Fixed
-  include NotSummable
-  include NoConstraints
 
   def to_s = 'X'
 
@@ -317,8 +286,7 @@ end
 
 class FixedDigit
   include FixedSingleValue
-  include UniqueConstraint
-  include NoConstraints
+  include NoLimit
 
   def to_s
     value.to_s
@@ -328,14 +296,33 @@ class FixedDigit
     accumulated + value
   end
 
-  alias :unique_constrain :delete_value
+  def unique_constrain(mut_candidates)
+    mut_candidates.delete(value)
+  end
 end
 
 class SingleSum
   include FixedSingleValue
-  include NotSummable
-  include SumConstraint
-  include NoConstraints
+  include NoLimit
+
+  # required when a lateral limit is traversed vertically or viceversa
+  def add_to(accumulated)
+    accumulated
+  end
+
+  # idem
+  def unique_constrain(_) = nil
+
+  # cond: available_digits is sorted asc
+  def sum_constrain(mut_candidates, accumulated, nvars, available_digits)
+    min_others = available_digits[...nvars].sum
+    max_difference = value - accumulated - min_others
+    offset = available_digits.length - nvars
+    max_others = available_digits.drop(offset).sum
+    min_difference = value - accumulated - max_others
+
+    mut_candidates.select!{ |x| min_difference <= x && x <= max_difference }
+  end
 end
 
 class RightsideSum < SingleSum
