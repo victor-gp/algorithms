@@ -35,8 +35,8 @@ class Kakuro
         p = '\|' # pipe regex
         np = "[^#{p}]" # no-pipe regex
         cells_s = line.scan(/#{p}(#{np}*)(?=#{p})/) # remove pipes
-                      .map{ |match_ary| match_ary[0].strip } # trim whitespace
-        cells = cells_s.map{ |cell_s| parse_cell(cell_s) }
+                      .map { |match_ary| match_ary[0].strip } # trim whitespace
+        cells = cells_s.map { |cell_s| parse_cell(cell_s) }
         grid.push cells
       end
 
@@ -54,10 +54,10 @@ class Kakuro
         DownwardSum.new(sum.to_i)
       elsif /^\\(?<sum>\d+)$/ =~ cell_s
         RightsideSum.new(sum.to_i)
-      elsif /^(?<sumL>\d+)\\(?<sumR>\d+)$/ =~ cell_s
+      elsif /^(?<s_left>\d+)\\(?<s_right>\d+)$/ =~ cell_s
         CrossSum.new(
-          DownwardSum.new(sumL.to_i),
-          RightsideSum.new(sumR.to_i)
+          DownwardSum.new(s_left.to_i),
+          RightsideSum.new(s_right.to_i)
         )
       else
         FixedDigit.new(cell_s.to_i)
@@ -88,12 +88,12 @@ class Kakuro
 
     # search what's left of the current row
     i, j = next_cell
-    var_j = j.downto(0).find{ |j| grid[i][j].variable? }
+    var_j = j.downto(0).find { |j| grid[i][j].variable? }
     return i, var_j if var_j
 
     # search rows above current row
     (i - 1).downto(0).each do |i|
-      var_j = (width - 1).downto(0).find{ |j| grid[i][j].variable? }
+      var_j = (width - 1).downto(0).find { |j| grid[i][j].variable? }
       return i, var_j if var_j
     end
 
@@ -103,7 +103,7 @@ class Kakuro
   # returns nil if (i,j) is the first cell
   def next_cell(i, j)
     j -= 1
-    return [i,j] if j >= 0
+    return [i, j] if j >= 0
 
     i -= 1
     j = width - 1
@@ -176,10 +176,9 @@ class Kakuro
 
     _, constraint_j, left_acc, nvars =
       accumulate_until_limit(one_i, left_js, :lateral_limit?)
-
     return if constraint_j.nil?
-    right_acc = accumulate_back_until_limit(one_i, right_js, :lateral_limit?)
 
+    right_acc = accumulate_back_until_limit(one_i, right_js, :lateral_limit?)
     grid[i][constraint_j].right_constrain(
       mut_candidates, left_acc + right_acc, nvars, horizontal_available
     )
@@ -191,10 +190,9 @@ class Kakuro
 
     constraint_i, _, upper_acc, nvars =
       accumulate_until_limit(upper_is, one_j, :vertical_limit?)
-
     return if constraint_i.nil?
-    lower_acc = accumulate_back_until_limit(lower_is, one_j, :vertical_limit?)
 
+    lower_acc = accumulate_back_until_limit(lower_is, one_j, :vertical_limit?)
     grid[constraint_i][j].down_constrain(
       mut_candidates, upper_acc + lower_acc, nvars, vertical_available
     )
@@ -214,7 +212,7 @@ class Kakuro
       end
     end
 
-    return [nil, nil, acc, nvars]
+    [nil, nil, acc, nvars]
   end
 
   # for traversing already visited cells, no need to keep the end position nor nvars (=0)
@@ -272,6 +270,7 @@ class X
 
   def lateral_limit?  = true
   def vertical_limit? = true
+
   def right_constrain(_, _, _, _) = nil
   def down_constrain(_, _, _, _)  = nil
 end
@@ -302,7 +301,7 @@ class FixedDigit < FixedSingleValue
   end
 end
 
-class SingleSum  < FixedSingleValue
+class SingleSum < FixedSingleValue
   include NoLimit
 
   # required when a lateral limit is traversed vertically or viceversa
@@ -316,9 +315,9 @@ class SingleSum  < FixedSingleValue
   # cond: available_digits is sorted asc,
   #       nvars not including the cell currently being assigned
   def sum_constrain(mut_candidates, accumulated, nvars, available_digits)
-    if nvars == 0
+    if nvars.zero?
       expected = value - accumulated
-      mut_candidates.select!{ |c| c == expected }
+      mut_candidates.select! { |c| c == expected }
       return
     end
 
@@ -326,7 +325,7 @@ class SingleSum  < FixedSingleValue
     upper_bound = value - min_others
     max_others = accumulated + available_digits[-nvars..].sum
     lower_bound = value - max_others
-    mut_candidates.select!{ |c| lower_bound <= c && c <= upper_bound }
+    mut_candidates.select! { |c| lower_bound <= c && c <= upper_bound }
   end
 end
 
@@ -337,7 +336,7 @@ class RightsideSum < SingleSum
 
   def lateral_limit? = true
 
-  alias :right_constrain :sum_constrain
+  alias right_constrain sum_constrain
 end
 
 class DownwardSum < SingleSum
@@ -347,7 +346,7 @@ class DownwardSum < SingleSum
 
   def vertical_limit? = true
 
-  alias :down_constrain :sum_constrain
+  alias down_constrain sum_constrain
 end
 
 class CrossSum

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # https://www.codingame.com/training/medium/connect-the-hyper-dots
 
 class Point
@@ -22,25 +24,25 @@ class Point
   end
 
   def nearest_index(points)
-    distances = points.map{ |p| distance(p) }
+    distances = points.map { |p| distance(p) }
     _, index = distances.each_with_index.min
     index
   end
 
   def distance(other_point)
     coord_pairs = coordinates.zip other_point.coordinates
-    squares = coord_pairs.map{ |a, b| (a - b)**2 }
+    squares = coord_pairs.map { |a, b| (a - b)**2 }
     Math.sqrt(squares.sum)
   end
 
   def same_orthant?(other_point)
     coord_pairs = coordinates.zip other_point.coordinates
-    coord_pairs.none?{ |a, b| a * b < 0 }
+    coord_pairs.none? { |a, b| a * b < 0 }
   end
 end
 
 def read_input
-  count, _ = gets.split.map(&:to_i)
+  count, = gets.split.map(&:to_i)
   points = []
   count.times do
     point_line = gets

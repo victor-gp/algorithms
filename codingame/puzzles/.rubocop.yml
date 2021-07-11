@@ -1,0 +1,10 @@
+# fails when I have parameters like i, j
+Naming/MethodParameterName:
+  Enabled: false
+
+# fails when I do lowercase annotations
+Style/CommentAnnotation:
+  Enabled: false
+
+Style/Documentation:
+  Enabled: false
