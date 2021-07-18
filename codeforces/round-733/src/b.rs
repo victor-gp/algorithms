@@ -55,22 +55,3 @@ fn print_inside(width: u32) {
         print!("0");
     }
 }
-
-
-// fn input_token() -> String {
-// 	let mut input = String::new();
-// 	io::stdin().read_line(&mut input).unwrap();
-// 	let value = input.trim().parse::<i32>().unwrap();
-// 	value
-// }
-
-// fn input_tokens() -> Vec<String> {
-// 	let mut input = String::new();
-// 	input = input.trim().to_string();
-// 	io::stdin().read_line(&mut input).unwrap();
-// 	let values: Vec<i32> = input
-// 		.split_whitespace()
-// 		.map(|s| s.parse().unwrap())
-// 		.collect();
-// 	values
-// }
