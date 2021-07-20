@@ -94,13 +94,13 @@ class Futoshiki {
 
 class Cell {
     public int value;
-    private Constraint right;
-    private Constraint down;
+    Inequality right;
+    Inequality down;
 
     public Cell(int value, char right, char down) {
         this.value = value;
-        this.right = Constraint.fromChar(right);
-        this.down = Constraint.fromChar(down);
+        this.right = new Inequality(right);
+        this.down = new Inequality(down);
     }
 
     public String toString() {
@@ -123,40 +123,34 @@ class Cell {
     }
 }
 
-// todo: rewrite as Inequality & enum InequalityType
-abstract class Constraint {
+class Inequality {
+    Type type;
 
-    public static Constraint fromChar(char constraintChar) {
+    private enum Type {
+        MORE, LESS, NONE
+    }
+
+    public Inequality(char constraintChar) {
         switch (constraintChar) {
             case '>':
-                return new More();
+                type = Type.MORE;
+                break;
             case '<':
-                return new Less();
+                type = Type.LESS;
+                break;
             default:
-                return new None();
+                type = Type.NONE;
         }
     }
 
-    public abstract boolean validate(int value, int nextValue);
-}
-
-class None extends Constraint {
-
     public boolean validate(int value, int nextValue) {
-        return true;
-    }
-}
-
-class More extends Constraint {
-
-    public boolean validate(int value, int nextValue) {
-        return value > nextValue;
-    }
-}
-
-class Less extends Constraint {
-
-    public boolean validate(int value, int nextValue) {
-        return value < nextValue;
+        switch (type) {
+            case MORE:
+                return value > nextValue;
+            case LESS:
+                return value < nextValue;
+            default:
+                return true;
+        }
     }
 }
