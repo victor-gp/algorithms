@@ -1,3 +1,5 @@
+// https://www.codingame.com/training/medium/box-of-cigars
+
 #include <iostream>
 #include <vector>
 
