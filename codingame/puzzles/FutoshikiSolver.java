@@ -88,8 +88,71 @@ class Futoshiki {
         return str;
     }
 
-    // dumb backtracking
-    public void solve() {}
+    // cond: the futoshiki has a solution
+    public void solve() {
+        solveInner(0, 0);
+    }
+
+    private boolean solveInner(int i, int j) {
+        int ij = findNextUnset(i, j);
+        if (ij == -1) return true;
+        i = ij / size;
+        j = ij % size;
+
+        for (int k = 1; k <= size; k++) {
+            grid[i][j].value = k;
+            if (! validateHorizontal(i, j)) continue;
+            if (! validateVertical(i, j)) continue;
+            if (! validateUnicity(i,j)) continue;
+
+            if (solveInner(i, j)) return true;
+        }
+
+        grid[i][j].value = 0;
+        return false;
+    }
+
+    private int findNextUnset(int i, int j) {
+        while (grid[i][j].isSet()) {
+            ++j;
+            if (j == size) {
+                j = 0;
+                ++i;
+                if (i == size) return -1;
+            }
+        }
+        return i*size + j;
+    }
+
+    private boolean validateHorizontal(int i, int j) {
+        return (j == 0 || grid[i][j-1].validateRight(grid[i][j]))
+            && (j == size - 1 || grid[i][j].validateRight(grid[i][j+1]));
+    }
+    private boolean validateVertical(int i, int j) {
+        return (i == 0 || grid[i-1][j].validateDown(grid[i][j]))
+            && (i == size - 1 || grid[i][j].validateDown(grid[i+1][j]));
+    }
+
+    private boolean validateUnicity(int i, int j) {
+        int newValue = grid[i][j].value;
+        for (int k = 0; k < i; k++) {
+            if (grid[k][j].value == newValue)
+                return false;
+        }
+        for (int k = i+1; k < size; k++) {
+            if (grid[k][j].value == newValue)
+                return false;
+        }
+        for (int k = 0; k < j; k++) {
+            if (grid[i][k].value == newValue)
+                return false;
+        }
+        for (int k = j+1; k < size; k++) {
+            if (grid[i][k].value == newValue)
+                return false;
+        }
+        return true;
+    }
 }
 
 class Cell {
@@ -114,12 +177,18 @@ class Cell {
         return value != 0;
     }
 
-    public boolean validateRight(int rightValue) {
-        return right.validate(value, rightValue);
+    public boolean validateRight(Cell rightCell) {
+        if (! rightCell.isSet())
+            return true;
+        else
+            return right.validate(value, rightCell.value);
     }
 
-    public boolean validateDown(int downValue) {
-        return down.validate(value, downValue);
+    public boolean validateDown(Cell downCell) {
+        if (! downCell.isSet())
+            return true;
+        else
+            return down.validate(value, downCell.value);
     }
 }
 
