@@ -69,8 +69,8 @@ class Futoshiki {
     }
 
     private StringTokenizer nextLineTokens(Scanner in) {
-        // tokenizer with delimiter = single space & delimiters are tokens
-        return new StringTokenizer(in.nextLine(), " ", true);
+        // tokenizer with delimiters = (single space, >, <) & delimiters are tokens
+        return new StringTokenizer(in.nextLine(), " ><", true);
     }
 
     private class ValuesLineTuple {
@@ -85,6 +85,7 @@ class Futoshiki {
                 str += grid[i][j].toString();
             str += "\n";
         }
+        str = str.trim(); // drop the last newline
         return str;
     }
 
@@ -205,6 +206,12 @@ class Inequality {
                 type = Type.MORE;
                 break;
             case '<':
+                type = Type.LESS;
+                break;
+            case 'v':
+                type = Type.MORE;
+                break;
+            case '^':
                 type = Type.LESS;
                 break;
             default:
