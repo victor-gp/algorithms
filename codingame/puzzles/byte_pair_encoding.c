@@ -13,14 +13,17 @@ struct production_rule
     byte_pair replacement;
 };
 
+typedef struct production_rule production_rule;
+
 struct encoding
 {
     char (*text)[];
-    struct production_rule (*rules)[];
+    production_rule (*rules)[];
 };
 
-struct encoding encode(
-    char text[], size_t text_size, struct production_rule rules[], char current_non_terminal);
+typedef struct encoding encoding;
+
+encoding encode(char text[], size_t text_size, production_rule rules[], char current_non_terminal);
 
 int main()
 {
@@ -28,13 +31,14 @@ int main()
     int m; // of length m
     scanf("%d%d", &n, &m);
 
-    char text[n * m];
+    size_t text_size = n * m;
+    char text[text_size + 1];
     for (int i = 0; i < n; i++)
         scanf("%s", &text[i * m]);
+    text[m * n] = '\0';
 
-    int text_size = n * m;
-    struct production_rule rules[0];
-    struct encoding enc = encode(text, text_size, rules, 'Z');
+    production_rule rules[0];
+    encoding enc = encode(text, text_size, rules, 'Z');
 
     printf("%s\n", text);
 
@@ -46,11 +50,18 @@ bool equals(byte_pair a, byte_pair b)
     return memcmp(a, b, 2) == 0;
 }
 
-char *to_s(byte_pair bp)
+char *bp_to_s(byte_pair bp)
 {
     static char s[3];
     memcpy(s, bp, 2);
     s[3] = NULL;
+    return &s;
+}
+
+char *pr_to_s(production_rule pr)
+{
+    static char s[6];
+    sprintf(s, "%c = %s", pr.symbol, pr.replacement);
     return &s;
 }
 
@@ -63,29 +74,39 @@ struct pair_stats
 
 typedef struct pair_stats pair_stats;
 
-const pair_stats NONE = {.pair = NULL, .freq = 0, .first_index = -1};
-
 // returns stats for the most frequent byte pair
 // leftmost one in case of tie, NONE if no repetitions
 pair_stats most_frequent_pair(char text[], size_t text_size);
 
-struct encoding encode(
-    char text[], size_t text_size, struct production_rule rules[], char current_non_terminal)
+// replaces all instances of rule.replacement for rule.symbol, left to right
+void gsub(char text[], size_t *text_size, production_rule rule);
+
+encoding encode(char text[], size_t text_size, production_rule rules[], char current_non_terminal)
 {
     pair_stats to_be_replaced = most_frequent_pair(text, text_size);
 
     if (to_be_replaced.freq == 0)
     {
         printf("base case\n");
-    }
-    else
-    {
-        printf("%s\n", to_s(to_be_replaced.pair));
+        encoding ret_stub;
+        return ret_stub;
     }
 
-    struct encoding ret_stub;
-    return ret_stub;
+    production_rule new_rule;
+    new_rule.symbol = current_non_terminal;
+    memcpy(new_rule.replacement, to_be_replaced.pair, 2);
+    --current_non_terminal;
+    printf("%s\n", pr_to_s(new_rule));
+
+    // todo: append new rule to rules;
+
+    gsub(text, &text_size, new_rule);
+    printf("%s\n", text);
+
+    encode(text, text_size, rules, current_non_terminal);
 }
+
+const pair_stats NONE = {.pair = NULL, .freq = 0, .first_index = -1};
 
 // increases the freq of next_pair if present in pairs, grows pairs with it otherwise
 void insert(pair_stats pairs[], size_t *pairs_size, byte_pair next_pair, size_t np_index);
@@ -100,7 +121,7 @@ pair_stats most_frequent_pair(char text[], size_t text_size)
 {
     if (text_size < 4)
         return NONE;
-
+    // todo: strlen
     size_t max_possible_pairs = text_size - 1;
     pair_stats pairs[max_possible_pairs];
     size_t pairs_size;
@@ -167,4 +188,27 @@ pair_stats max_repeated(pair_stats pairs[], size_t pairs_size)
         return NONE;
     else
         return *max;
+}
+
+// replaces all instances of rule.replacement for rule.symbol, left to right
+void gsub(char text[], size_t *text_size, production_rule rule)
+{
+    size_t i, j;
+    for (i = 0, j = i; text[j] != '\0'; i++, j++)
+    {
+        byte_pair current;
+        memcpy(current, &text[j], 2);
+        if (equals(current, rule.replacement))
+        {
+            text[i] = rule.symbol;
+            ++j; // skip the second byte of the pair
+        }
+        else
+        {
+            text[i] = text[j];
+        }
+    }
+    text[i] = '\0';
+    *text_size = i-1;
+    // todo: free mem
 }
