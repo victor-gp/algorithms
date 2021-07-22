@@ -246,11 +246,17 @@ char *prc_to_s(pr_cons *cons)
     if (cons->head.symbol == '\0')
         return "dummy rule";
     else if (cons->tail == NULL)
-        return pr_to_s(cons->head);
+    {
+        char *pr_s = pr_to_s(cons->head);
+        static char s[7];
+        memcpy(s, pr_s, 6);
+        s[6] = '\0';
+        return s;
+    }
     else
     {
         char *tail_s = prc_to_s(cons->tail);
-        size_t sizeof_tail = strlen(tail_s) * sizeof(char);
+        size_t sizeof_tail = (strlen(tail_s) + 1) * sizeof(char);
         size_t sizeof_head = 6 * sizeof(char);
         size_t s_size = sizeof_tail + sizeof_head + sizeof(char);
         char *s = malloc(s_size);
