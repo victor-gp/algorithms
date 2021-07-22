@@ -54,22 +54,22 @@ char *bp_to_s(byte_pair bp)
 {
     static char s[3];
     memcpy(s, bp, 2);
-    s[3] = NULL;
-    return &s;
+    s[2] = '\0';
+    return s;
 }
 
 char *pr_to_s(production_rule pr)
 {
     static char s[6];
     sprintf(s, "%c = %s", pr.symbol, pr.replacement);
-    return &s;
+    return s;
 }
 
 struct pair_stats
 {
+    size_t first_index;
     byte_pair pair;
     short freq;
-    short first_index;
 };
 
 typedef struct pair_stats pair_stats;
@@ -106,10 +106,10 @@ encoding encode(char text[], size_t text_size, production_rule rules[], char cur
     encode(text, text_size, rules, current_non_terminal);
 }
 
-const pair_stats NONE = {.pair = NULL, .freq = 0, .first_index = -1};
+const pair_stats NONE = {.pair = {'\0', '\0'}, .freq = 0, .first_index = -1};
 
-// increases the freq of next_pair if present in pairs, grows pairs with it otherwise
-void insert(pair_stats pairs[], size_t *pairs_size, byte_pair next_pair, size_t np_index);
+// increases the freq of pair if already in pairs, adds it into pairs otherwise
+void accumulate(pair_stats pairs[], size_t *pairs_size, byte_pair pair, size_t pair_index);
 
 // returns the most frequent pair_stats (leftmost if tie),
 // or NONE if all pairs have a single occurrence
@@ -141,8 +141,8 @@ pair_stats most_frequent_pair(char text[], size_t text_size)
         memcpy(bp, &text[i], 2);
         if (equals(bp, pre_bp) && i == pre_bp_i + 1)
             continue;
-        insert(pairs, &pairs_size, bp, i);
 
+        accumulate(pairs, &pairs_size, bp, i);
         memcpy(pre_bp, bp, 2);
         pre_bp_i = i;
     }
@@ -150,24 +150,24 @@ pair_stats most_frequent_pair(char text[], size_t text_size)
     return max_repeated(pairs, pairs_size);
 }
 
-// increases the freq of next_pair if present in pairs, grows pairs with it otherwise
-void insert(pair_stats pairs[], size_t *pairs_size, byte_pair next_pair, size_t np_index)
+// increases the freq of pair if already in pairs, adds it into pairs otherwise
+void accumulate(pair_stats pairs[], size_t *pairs_size, byte_pair pair, size_t pair_index)
 {
     // nice: optimize with alfabetical order + binary search
 
     for (size_t i = 0; i < *pairs_size; i++)
     {
-        if (equals(pairs[i].pair, next_pair))
+        if (equals(pairs[i].pair, pair))
         {
             pairs[i].freq += 1;
             return;
         }
     }
 
-    *pairs_size += 1;
-    memcpy(pairs[*pairs_size].pair, next_pair, 2);
+    memcpy(pairs[*pairs_size].pair, pair, 2);
     pairs[*pairs_size].freq = 1;
-    pairs[*pairs_size].first_index = np_index;
+    pairs[*pairs_size].first_index = pair_index;
+    *pairs_size += 1;
 }
 
 // returns the most frequent pair_stats (leftmost if tie),
@@ -209,6 +209,6 @@ void gsub(char text[], size_t *text_size, production_rule rule)
         }
     }
     text[i] = '\0';
-    *text_size = i-1;
+    *text_size = i;
     // todo: free mem
 }
