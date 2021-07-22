@@ -7,6 +7,9 @@
 
 typedef char byte_pair[2];
 
+bool equals(byte_pair a, byte_pair b);
+char *bp_to_s(byte_pair bp);
+
 struct production_rule
 {
     char symbol;
@@ -14,6 +17,8 @@ struct production_rule
 };
 
 typedef struct production_rule production_rule;
+
+char *pr_to_s(production_rule pr);
 
 struct pr_cons
 {
@@ -24,23 +29,20 @@ struct pr_cons
 typedef struct pr_cons pr_cons;
 
 pr_cons empty_pr_cons();
-
 void append_rule(pr_cons *cons, production_rule rule);
-
 void free_pr_cons(pr_cons *cons);
+char *prc_to_s(pr_cons *cons);
 
-struct encoding
+void encode(char text[], pr_cons *rules, char current_non_terminal);
+
+struct pair_stats
 {
-    char (*text)[];
-    pr_cons production_rules;
+    size_t first_index;
+    byte_pair pair;
+    short freq;
 };
 
-typedef struct encoding encoding;
-
-encoding encode(char text[], pr_cons *rules, char current_non_terminal);
-
-char *to_s(encoding e);
-char *prc_to_s(pr_cons *cons);
+typedef struct pair_stats pair_stats;
 
 int main()
 {
@@ -54,8 +56,8 @@ int main()
     text[n * m] = '\0';
 
     pr_cons rules = empty_pr_cons();
-    encoding enc = encode(text, &rules, 'Z');
 
+    encode(text, &rules, 'Z');
     printf("%s\n", text);
     printf("%s\n", prc_to_s(&rules));
 
@@ -64,93 +66,6 @@ int main()
     return 0;
 }
 
-bool equals(byte_pair a, byte_pair b)
-{
-    return memcmp(a, b, 2) == 0;
-}
-
-char *bp_to_s(byte_pair bp)
-{
-    static char s[3];
-    memcpy(s, bp, 2);
-    s[2] = '\0';
-    return s;
-}
-
-char *pr_to_s(production_rule pr)
-{
-    static char s[6];
-    sprintf(s, "%c = %s", pr.symbol, bp_to_s(pr.replacement));
-    return s;
-}
-
-pr_cons empty_pr_cons()
-{
-    production_rule dummy_pr = {.symbol = '\0'};
-    pr_cons new = {.head = dummy_pr, .tail = NULL};
-    return new;
-}
-
-void append_rule(pr_cons *cons, production_rule rule)
-{
-    if (cons->head.symbol == '\0')
-        memcpy(&cons->head, &rule, sizeof(production_rule));
-    else if (cons->tail == NULL)
-    {
-        cons->tail = malloc(sizeof(pr_cons));
-        memcpy(&(cons->tail->head), &rule, sizeof(production_rule));
-    }
-    else
-        append_rule(cons->tail, rule);
-}
-
-void free_pr_cons(pr_cons *cons)
-{
-    if (cons->tail != NULL)
-    {
-        free_pr_cons(cons->tail);
-        free(cons->tail);
-        cons->tail = NULL;
-    }
-}
-
-char *prc_to_s(pr_cons *cons)
-{
-    if (cons->head.symbol == '\0')
-        return "dummy rule";
-    else if (cons->tail == NULL)
-        return pr_to_s(cons->head);
-    else
-    {
-        char *tail_s = prc_to_s(cons->tail);
-        size_t sizeof_tail = strlen(tail_s) * sizeof(char);
-        size_t sizeof_head = 6 * sizeof(char);
-        size_t s_size = sizeof_tail + sizeof_head + sizeof(char);
-        char *s = malloc(s_size);
-        strncpy(&s[7], tail_s, sizeof_tail);
-        s[6] = '\n';
-        char *head_s = pr_to_s(cons->head);
-        strncpy(s, head_s, sizeof_head);
-
-        // free(tail_s);
-        // there's a memory leak here, but I get `munmap_chunk(): invalid pointer` when freeing.
-        // even using strncpy as suggested here: https://stackoverflow.com/a/10063274/
-
-        return s;
-    }
-}
-
-char *to_s(encoding e);
-
-struct pair_stats
-{
-    size_t first_index;
-    byte_pair pair;
-    short freq;
-};
-
-typedef struct pair_stats pair_stats;
-
 // returns stats for the most frequent byte pair
 // leftmost one in case of tie, NONE if no repetitions
 pair_stats most_frequent_pair(char text[]);
@@ -158,16 +73,12 @@ pair_stats most_frequent_pair(char text[]);
 // replaces all instances of rule.replacement for rule.symbol, left to right
 void gsub(char text[], production_rule rule);
 
-encoding encode(char text[], pr_cons *rules, char current_non_terminal)
+void encode(char text[], pr_cons *rules, char current_non_terminal)
 {
     pair_stats to_be_replaced = most_frequent_pair(text);
 
     if (to_be_replaced.freq == 0)
-    {
-        printf("base case\n");
-        encoding ret_stub;
-        return ret_stub;
-    }
+        return;
 
     production_rule new_rule = {.symbol = current_non_terminal};
     memcpy(new_rule.replacement, to_be_replaced.pair, 2);
@@ -176,7 +87,7 @@ encoding encode(char text[], pr_cons *rules, char current_non_terminal)
 
     gsub(text, new_rule);
 
-    return encode(text, rules, current_non_terminal);
+    encode(text, rules, current_non_terminal);
 }
 
 const pair_stats NONE = {.pair = {'\0', '\0'}, .freq = 0, .first_index = -1};
@@ -275,10 +186,83 @@ void gsub(char text[], production_rule rule)
             ++j; // skip the second byte of the pair
         }
         else
-        {
             text[i] = text[j];
-        }
     }
     text[i] = '\0';
-    // todo: free mem
+}
+
+bool equals(byte_pair a, byte_pair b)
+{
+    return memcmp(a, b, 2) == 0;
+}
+
+char *bp_to_s(byte_pair bp)
+{
+    static char s[3];
+    memcpy(s, bp, 2);
+    s[2] = '\0';
+    return s;
+}
+
+char *pr_to_s(production_rule pr)
+{
+    static char s[6];
+    sprintf(s, "%c = %s", pr.symbol, bp_to_s(pr.replacement));
+    return s;
+}
+
+pr_cons empty_pr_cons()
+{
+    production_rule dummy_pr = {.symbol = '\0'};
+    pr_cons new = {.head = dummy_pr, .tail = NULL};
+    return new;
+}
+
+void append_rule(pr_cons *cons, production_rule rule)
+{
+    if (cons->head.symbol == '\0')
+        memcpy(&cons->head, &rule, sizeof(production_rule));
+    else if (cons->tail == NULL)
+    {
+        cons->tail = malloc(sizeof(pr_cons));
+        memcpy(&(cons->tail->head), &rule, sizeof(production_rule));
+    }
+    else
+        append_rule(cons->tail, rule);
+}
+
+void free_pr_cons(pr_cons *cons)
+{
+    if (cons->tail != NULL)
+    {
+        free_pr_cons(cons->tail);
+        free(cons->tail);
+        cons->tail = NULL;
+    }
+}
+
+char *prc_to_s(pr_cons *cons)
+{
+    if (cons->head.symbol == '\0')
+        return "dummy rule";
+    else if (cons->tail == NULL)
+        return pr_to_s(cons->head);
+    else
+    {
+        char *tail_s = prc_to_s(cons->tail);
+        size_t sizeof_tail = strlen(tail_s) * sizeof(char);
+        size_t sizeof_head = 6 * sizeof(char);
+        size_t s_size = sizeof_tail + sizeof_head + sizeof(char);
+        char *s = malloc(s_size);
+        strncpy(&s[7], tail_s, sizeof_tail);
+        s[6] = '\n';
+        char *head_s = pr_to_s(cons->head);
+        strncpy(s, head_s, sizeof_head);
+
+        // free(tail_s);
+        // there's a memory leak here, but I get `munmap_chunk(): invalid pointer` when freeing.
+        // even using strncpy as suggested here: https://stackoverflow.com/a/10063274/
+
+        return s;
+    }
 }
