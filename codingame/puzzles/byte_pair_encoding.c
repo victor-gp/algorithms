@@ -93,7 +93,7 @@ void encode(char text[], pr_cons *rules, char current_non_terminal)
 const pair_stats NONE = {.pair = {'\0', '\0'}, .freq = 0, .first_index = -1};
 
 // increases the freq of pair if already in pairs, adds it into pairs otherwise
-void accumulate(pair_stats pairs[], size_t *pairs_size, byte_pair pair, size_t pair_index);
+void accumulate_stats(pair_stats pairs[], size_t *pairs_size, byte_pair pair, size_t text_index);
 
 // returns the most frequent pair_stats (leftmost if tie),
 // or NONE if all pairs have a single occurrence
@@ -124,7 +124,7 @@ pair_stats most_frequent_pair(char text[])
         if (equals(bp, pre_bp) && i == pre_bp_i + 1)
             continue;
 
-        accumulate(pairs, &pairs_size, bp, i);
+        accumulate_stats(pairs, &pairs_size, bp, i);
         memcpy(pre_bp, bp, 2);
         pre_bp_i = i;
     }
@@ -132,23 +132,46 @@ pair_stats most_frequent_pair(char text[])
     return max_repeated(pairs, pairs_size);
 }
 
-// increases the freq of pair if already in pairs, adds it into pairs otherwise
-void accumulate(pair_stats pairs[], size_t *pairs_size, byte_pair pair, size_t pair_index)
+// finds the index in (alph. sorted) pairs[] where pair is/should be stored
+size_t insertion_index(pair_stats pairs[], size_t pairs_size, byte_pair pair)
 {
-    // nice: optimize with alfabetical order + binary search
-
-    for (size_t i = 0; i < *pairs_size; i++)
+    size_t left, right, mid;
+    for (left = 0, right = pairs_size; left < right;)
     {
-        if (equals(pairs[i].pair, pair))
+        mid = (left + right) / 2;
+        int cmp = memcmp(pairs[mid].pair, pair, 2);
+        if (cmp < 0)
+            left = mid + 1;
+        else if (cmp > 0)
+            right = mid;
+        else
+            return mid;
+    }
+    return left;
+}
+
+// increases the freq of pair if already in pairs[], adds it otherwise
+void accumulate_stats(pair_stats pairs[], size_t *pairs_size, byte_pair pair, size_t text_index)
+{
+    size_t pairs_index = insertion_index(pairs, *pairs_size, pair);
+
+    if (pairs_index != *pairs_size)
+    {
+        if (equals(pairs[pairs_index].pair, pair))
         {
-            pairs[i].freq += 1;
+            pairs[pairs_index].freq += 1;
             return;
+        }
+        else
+        {
+            size_t displaced_size = (*pairs_size - pairs_index) * sizeof(pair_stats);
+            memmove(&pairs[pairs_index + 1], &pairs[pairs_index], displaced_size);
         }
     }
 
-    memcpy(pairs[*pairs_size].pair, pair, 2);
-    pairs[*pairs_size].freq = 1;
-    pairs[*pairs_size].first_index = pair_index;
+    memcpy(pairs[pairs_index].pair, pair, 2);
+    pairs[pairs_index].freq = 1;
+    pairs[pairs_index].first_index = text_index;
     *pairs_size += 1;
 }
 
