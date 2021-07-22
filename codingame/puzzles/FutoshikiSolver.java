@@ -1,4 +1,4 @@
-// https://www.codingame.com/ide/puzzle/futoshiki-solver
+// https://www.codingame.com/training/medium/futoshiki-solver
 // https://en.wikipedia.org/wiki/Futoshiki
 
 import java.util.*;
