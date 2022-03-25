@@ -5,6 +5,7 @@ import System.IO
 import qualified Data.Map.Strict as Map
 import Data.List (stripPrefix)
 import Data.Char (isDigit)
+import Data.Array
 
 main :: IO ()
 main = do
@@ -15,11 +16,13 @@ main = do
   let input = map read . words $ inputLine :: [Int]
   _ <- getLine -- program length
   programLines <- getContents
-  let program = map readInstruction . lines $ programLines
+  let program = readProgram programLines
 
-  -- hPutStrLn stderr "Debug messages..."
+  let initState = initialState program input
+  let finalState = run program initState
 
-  putStrLn "output data"
+  let output = unwords . map show $ x1 finalState
+  putStrLn output
   return ()
 
 
@@ -65,7 +68,7 @@ pack = MkInstruction
 instance Instruction_ Instruction where
   execute (MkInstruction a) = execute a
 
-type Program = [Instruction]
+type Program = Array Addr Instruction
 type Addr = Int -- instruction address
 
 data State = State
@@ -74,22 +77,34 @@ data State = State
   , dat :: I
   , x0 :: [I] -- input
   , x1 :: [I] -- output
-  , labelToAddr :: Map.Map L Addr
+  , labelToAddr :: LabelsMap
   , alreadyExecuted :: [Bool]
   , plusDisabled :: Bool
   , minusDisabled :: Bool
   }
+type LabelsMap = Map.Map L Addr
 
 
 run :: Program -> State -> State
-run _ state = state
+run program state@State { pc = i }
+  | i == length program  = state
+  | otherwise  = run program nextState
+    where
+      nextState = execute (program ! i) state
 
 executePrefixable :: PrefixableIns -> State -> State
+executePrefixable (Mov _ _) state = state { pc = 1, x1 = [0] }
 executePrefixable _ state = state
 
 executePrefixed :: PrefixedIns -> State -> State
 executePrefixed _ state = state
 
+
+readProgram :: String -> Program
+readProgram programLines = listArray (0, programLength - 1) instructions
+  where
+    instructions = map readInstruction . lines $ programLines
+    programLength = length instructions
 
 readInstruction :: String -> Instruction
 readInstruction (stripPrefix "jmp " -> Just label) = pack $ Jmp label
@@ -111,7 +126,7 @@ read2opInstruction (stripPrefix "teq " -> Just ops) = pack . uncurry Teq $ read2
 read2opInstruction (stripPrefix "tgt " -> Just ops) = pack . uncurry Tgt $ read2RI ops
 read2opInstruction (stripPrefix "tlt " -> Just ops) = pack . uncurry Tlt $ read2RI ops
 read2opInstruction (stripPrefix "teq " -> Just ops) = pack . uncurry Teq $ read2RI ops
-read2opInstruction _ = error "unknown instruction"
+read2opInstruction str = error $ "unknown instruction: '" ++ str ++ "'"
 
 readRI :: String -> RI
 readRI str@(head : tail)
@@ -124,8 +139,17 @@ readR "acc" = Acc
 readR "dat" = Dat
 readR "x0" = X0
 readR "x1" = X1
-readR _ = error "unknown register"
+readR r = error $ "unknown register: '" ++ r ++ "'"
 
 read2RI :: String -> (RI, RI)
 read2RI operandsStr = (op1, op2)
   where [op1, op2] = map readRI . words $ operandsStr
+
+initialState :: Program -> [I] -> State
+initialState prog programInput = State
+  { pc = 0, acc = 0, dat = 0, x0 = programInput, x1 = []
+  , labelToAddr = Map.empty, alreadyExecuted = []
+  , plusDisabled = True, minusDisabled = True
+  }
+
+-- computeLabelToAddr :: Program -> LabelsMap
