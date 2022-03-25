@@ -1,40 +1,31 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ViewPatterns #-}
+
 import System.IO
-import Control.Monad
 import qualified Data.Map.Strict as Map
+import Data.List (stripPrefix)
+import Data.Char (isDigit)
 
 main :: IO ()
 main = do
   hSetBuffering stdout NoBuffering -- DO NOT REMOVE
 
-  -- Auto-generated code below aims at helping you parse
-  -- the standard input according to the problem statement.
-
-  input_line <- getLine
-  let k = read input_line :: Int
-  input_line <- getLine
-  let input = words input_line
-
-  forM [0..(k-1)] $ \i -> do
-    let inputdata = read (input!!(i)) :: Int
-    return ()
-  input_line <- getLine
-  let n = read input_line :: Int
-
-  replicateM n $ do
-    lineofcode <- getLine
-    return ()
+  _ <- getLine -- input length
+  inputLine <- getLine
+  let input = map read . words $ inputLine :: [Int]
+  _ <- getLine -- program length
+  programLines <- getContents
+  let program = map readInstruction . lines $ programLines
 
   -- hPutStrLn stderr "Debug messages..."
 
-  -- Write answer to stdout
   putStrLn "output data"
   return ()
 
 
-type R = String -- register
+data R = Acc | Dat | X0 | X1
 type I = Int -- integer
-data RI = R String | I Int
+data RI = R R | I I
 type L = String -- label
 
 data PrefixableIns
@@ -68,9 +59,11 @@ instance Instruction_ PrefixableIns where
 instance Instruction_ PrefixedIns where
   execute = executePrefixed
 
-data Instruction = forall a. Instruction_ a => Instruction a
+data Instruction = forall a . Instruction_ a => MkInstruction a
+pack :: Instruction_ a => a -> Instruction
+pack = MkInstruction
 instance Instruction_ Instruction where
-  execute (Instruction a) = execute a
+  execute (MkInstruction a) = execute a
 
 type Program = [Instruction]
 type Addr = Int -- instruction address
@@ -96,3 +89,47 @@ executePrefixable _ state = state
 
 executePrefixed :: PrefixedIns -> State -> State
 executePrefixed _ state = state
+
+
+readInstruction :: String -> Instruction
+readInstruction (stripPrefix "jmp " -> Just label) = pack $ Jmp label
+readInstruction (stripPrefix "add " -> Just op) = pack . Add $ readRI op
+readInstruction (stripPrefix "sub " -> Just op) = pack . Sub $ readRI op
+readInstruction (stripPrefix "mul " -> Just op) = pack . Mul $ readRI op
+readInstruction "not" = pack Not
+readInstruction (stripPrefix "dgt " -> Just op) = pack . Dgt $ readRI op
+readInstruction str = read2opInstruction str
+
+read2opInstruction :: String -> Instruction
+read2opInstruction (stripPrefix "mov " -> Just ops) = pack $ Mov op1 op2
+  where
+    [op1Str, op2Str] = words ops
+    op1 = readRI op1Str
+    op2 = readR op2Str
+read2opInstruction str = pack (insWord op1 op2)
+  where
+    [insWordStr, op1Str, op2Str] = words str
+    insWord = readInstructionWord insWordStr
+    op1 = readRI op1Str
+    op2 = readRI op2Str
+
+readRI :: String -> RI
+readRI str@(head : tail)
+  | isDigit head = I (read str :: I)
+  | otherwise = R (readR str)
+readRI [] = error "empty string?"
+
+readR :: String -> R
+readR "acc" = Acc
+readR "dat" = Dat
+readR "x0" = X0
+readR "x1" = X1
+readR _ = error "unknown register"
+
+readInstructionWord :: String -> (RI -> RI -> PrefixableIns)
+readInstructionWord "dst" = Dst
+readInstructionWord "teq" = Teq
+readInstructionWord "tgt" = Tgt
+readInstructionWord "tlt" = Tlt
+readInstructionWord "tcp" = Tcp
+readInstructionWord _ = error "unknown instruction"
