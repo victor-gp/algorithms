@@ -6,6 +6,7 @@ import qualified Data.Map.Strict as Map
 import Data.List (stripPrefix)
 import Data.Char (isDigit)
 import Data.Array
+import qualified Data.Text as T (pack, splitOn, unpack)
 
 main :: IO ()
 main = do
@@ -97,6 +98,7 @@ executePrefixable (Mov _ _) state = state { pc = 1, x1 = [0] }
 executePrefixable _ state = state
 
 executePrefixed :: PrefixedIns -> State -> State
+executePrefixed (Hash _ ) state = state {pc = 2, x1 = [1]}
 executePrefixed _ state = state
 
 
@@ -107,25 +109,44 @@ readProgram programLines = listArray (0, programLength - 1) instructions
     programLength = length instructions
 
 readInstruction :: String -> Instruction
-readInstruction (stripPrefix "jmp " -> Just label) = pack $ Jmp label
-readInstruction (stripPrefix "add " -> Just op) = pack . Add $ readRI op
-readInstruction (stripPrefix "sub " -> Just op) = pack . Sub $ readRI op
-readInstruction (stripPrefix "mul " -> Just op) = pack . Mul $ readRI op
-readInstruction "not" = pack Not
-readInstruction (stripPrefix "dgt " -> Just op) = pack . Dgt $ readRI op
-readInstruction str = read2opInstruction str
+readInstruction (stripPrefix "+" -> Just ins) = pack . Plus $ readPrefixableInstruction2 ins
+readInstruction (stripPrefix "-" -> Just ins) = pack . Minus $ readPrefixableInstruction2 ins
+readInstruction (stripPrefix "#" -> Just str) = pack $ Hash str
+readInstruction (stripPrefix "@" -> Just ins) = pack . At $ readPrefixableInstruction2 ins
+readInstruction str
+  | ':' `elem` str  = pack (Label label2 maybeIns)
+  | otherwise  = pack $ readPrefixableInstruction str
+    where
+      [label,rest] = T.splitOn (T.pack ":") (T.pack str)
+      label2 = T.unpack label -- labels are single words immediately followed by :
+      rest2 = unwords . words $ T.unpack rest -- remove excess whitespace
+      maybeIns = case rest2 of
+        "" -> Nothing
+        insStr -> Just $ readPrefixableInstruction2 insStr
 
-read2opInstruction :: String -> Instruction
-read2opInstruction (stripPrefix "mov " -> Just ops) = pack $ Mov op1 op2
+readPrefixableInstruction :: String -> PrefixableIns
+readPrefixableInstruction (stripPrefix "jmp " -> Just label) = Jmp label
+readPrefixableInstruction (stripPrefix "add " -> Just op) = Add $ readRI op
+readPrefixableInstruction (stripPrefix "sub " -> Just op) = Sub $ readRI op
+readPrefixableInstruction (stripPrefix "mul " -> Just op) = Mul $ readRI op
+readPrefixableInstruction "not" = Not
+readPrefixableInstruction (stripPrefix "dgt " -> Just op) = Dgt $ readRI op
+readPrefixableInstruction str = read2opInstruction str
+
+-- like the original but removes excess whitespace
+readPrefixableInstruction2 = readPrefixableInstruction . unwords . words
+
+read2opInstruction :: String -> PrefixableIns
+read2opInstruction (stripPrefix "mov " -> Just ops) = Mov op1 op2
   where
     [op1Str, op2Str] = words ops
     op1 = readRI op1Str
     op2 = readR op2Str
-read2opInstruction (stripPrefix "dst " -> Just ops) = pack . uncurry Dst $ read2RI ops
-read2opInstruction (stripPrefix "teq " -> Just ops) = pack . uncurry Teq $ read2RI ops
-read2opInstruction (stripPrefix "tgt " -> Just ops) = pack . uncurry Tgt $ read2RI ops
-read2opInstruction (stripPrefix "tlt " -> Just ops) = pack . uncurry Tlt $ read2RI ops
-read2opInstruction (stripPrefix "teq " -> Just ops) = pack . uncurry Teq $ read2RI ops
+read2opInstruction (stripPrefix "dst " -> Just ops) = uncurry Dst $ read2RI ops
+read2opInstruction (stripPrefix "teq " -> Just ops) = uncurry Teq $ read2RI ops
+read2opInstruction (stripPrefix "tgt " -> Just ops) = uncurry Tgt $ read2RI ops
+read2opInstruction (stripPrefix "tlt " -> Just ops) = uncurry Tlt $ read2RI ops
+read2opInstruction (stripPrefix "teq " -> Just ops) = uncurry Teq $ read2RI ops
 read2opInstruction str = error $ "unknown instruction: '" ++ str ++ "'"
 
 readRI :: String -> RI
