@@ -106,18 +106,18 @@ read2opInstruction (stripPrefix "mov " -> Just ops) = pack $ Mov op1 op2
     [op1Str, op2Str] = words ops
     op1 = readRI op1Str
     op2 = readR op2Str
-read2opInstruction str = pack (insWord op1 op2)
-  where
-    [insWordStr, op1Str, op2Str] = words str
-    insWord = readInstructionWord insWordStr
-    op1 = readRI op1Str
-    op2 = readRI op2Str
+read2opInstruction (stripPrefix "dst " -> Just ops) = pack . uncurry Dst $ read2RI ops
+read2opInstruction (stripPrefix "teq " -> Just ops) = pack . uncurry Teq $ read2RI ops
+read2opInstruction (stripPrefix "tgt " -> Just ops) = pack . uncurry Tgt $ read2RI ops
+read2opInstruction (stripPrefix "tlt " -> Just ops) = pack . uncurry Tlt $ read2RI ops
+read2opInstruction (stripPrefix "teq " -> Just ops) = pack . uncurry Teq $ read2RI ops
+read2opInstruction _ = error "unknown instruction"
 
 readRI :: String -> RI
 readRI str@(head : tail)
   | isDigit head = I (read str :: I)
   | otherwise = R (readR str)
-readRI [] = error "empty string?"
+readRI [] = error "empty string"
 
 readR :: String -> R
 readR "acc" = Acc
@@ -126,10 +126,6 @@ readR "x0" = X0
 readR "x1" = X1
 readR _ = error "unknown register"
 
-readInstructionWord :: String -> (RI -> RI -> PrefixableIns)
-readInstructionWord "dst" = Dst
-readInstructionWord "teq" = Teq
-readInstructionWord "tgt" = Tgt
-readInstructionWord "tlt" = Tlt
-readInstructionWord "tcp" = Tcp
-readInstructionWord _ = error "unknown instruction"
+read2RI :: String -> (RI, RI)
+read2RI operandsStr = (op1, op2)
+  where [op1, op2] = map readRI . words $ operandsStr
