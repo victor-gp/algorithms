@@ -180,12 +180,12 @@ read2opInstruction (stripPrefix "dst " -> Just ops) = uncurry Dst $ read2RI ops
 read2opInstruction (stripPrefix "teq " -> Just ops) = uncurry Teq $ read2RI ops
 read2opInstruction (stripPrefix "tgt " -> Just ops) = uncurry Tgt $ read2RI ops
 read2opInstruction (stripPrefix "tlt " -> Just ops) = uncurry Tlt $ read2RI ops
-read2opInstruction (stripPrefix "teq " -> Just ops) = uncurry Teq $ read2RI ops
+read2opInstruction (stripPrefix "tcp " -> Just ops) = uncurry Tcp $ read2RI ops
 read2opInstruction str = error $ "unknown instruction: '" ++ str ++ "'"
 
 readRI :: String -> RI
 readRI str@(head : tail)
-  | isDigit head = I (read str :: I)
+  | isDigit head || head == '-' = I (read str :: I)
   | otherwise = R (readR str)
 readRI [] = error "empty string"
 
