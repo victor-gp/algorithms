@@ -102,6 +102,18 @@ executePrefixable (Mul ri) state = executeArithmetic ri state (*)
 executePrefixable Not state@State { acc = x }
   | x == 0     = storeAcc state 100
   | otherwise  = storeAcc state 0
+executePrefixable (Teq ri1 ri2) state = executeTest ri1 ri2 state (==)
+executePrefixable (Tgt ri1 ri2) state = executeTest ri1 ri2 state (>)
+executePrefixable (Tlt ri1 ri2) state = executeTest ri1 ri2 state (<)
+executePrefixable (Tcp ri1 ri2) state
+  | a > b   = state3 { plusDisabled = False, minusDisabled = True }
+  | a == b  = state3 { plusDisabled = True, minusDisabled = True }
+  | a < b   = state3 { plusDisabled = True, minusDisabled = False }
+  where
+    a = riValue ri1 state
+    state2 = maybeConsumeInput ri1 state
+    b = riValue ri2 state
+    state3 = maybeConsumeInput ri2 state2
 executePrefixable _ state = state
 
 executeArithmetic :: RI -> State -> (Int -> Int -> Int) -> State
@@ -110,8 +122,19 @@ executeArithmetic (R X0) state@State{ x0 = x:xs } operator = state { acc = newAc
 executeArithmetic ri state operator = state { acc = newAcc }
   where newAcc = operator (valAcc state) (riValue ri state)
 
+executeTest :: RI -> RI -> State -> (Int -> Int -> Bool) -> State
+executeTest ri1 ri2 state cmp = state3 { plusDisabled = not res, minusDisabled = res }
+  where
+    a = riValue ri1 state
+    state2 = maybeConsumeInput ri1 state
+    b = riValue ri2 state
+    state3 = maybeConsumeInput ri2 state2
+    res = cmp a b
+
 executePrefixed :: PrefixedIns -> State -> State
-executePrefixed (Hash _ ) state = state {pc = 2, x1 = [1]}
+executePrefixed (Plus ins) state@State { plusDisabled = False } = execute ins state
+executePrefixed (Minus ins) state@State { minusDisabled = False } = execute ins state
+executePrefixed (Hash _) state = state
 executePrefixed _ state = state
 
 riValue :: RI -> State -> I
