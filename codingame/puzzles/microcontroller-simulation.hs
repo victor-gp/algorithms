@@ -96,16 +96,19 @@ run program state@State { pc = i }
 executePrefixable :: PrefixableIns -> State -> State
 executePrefixable (Mov ri reg) state = store reg state2 (riValue ri state)
   where state2 = maybeConsumeInput ri state
-executePrefixable (Add ri) state = storeAcc state2 (valAcc state + riValue ri state)
-  where state2 = maybeConsumeInput ri state
-executePrefixable (Sub ri) state = storeAcc state2 (valAcc state - riValue ri state)
-  where state2 = maybeConsumeInput ri state
-executePrefixable (Mul ri) state = storeAcc state2 (valAcc state * riValue ri state)
-  where state2 = maybeConsumeInput ri state
+executePrefixable (Add ri) state = executeArithmetic ri state (+)
+executePrefixable (Sub ri) state = executeArithmetic ri state (-)
+executePrefixable (Mul ri) state = executeArithmetic ri state (*)
 executePrefixable Not state@State { acc = x }
   | x == 0     = storeAcc state 100
   | otherwise  = storeAcc state 0
 executePrefixable _ state = state
+
+executeArithmetic :: RI -> State -> (Int -> Int -> Int) -> State
+executeArithmetic (R X0) state@State{ x0 = x:xs } operator = state { acc = newAcc, x0 = xs }
+  where newAcc = operator (valAcc state) x
+executeArithmetic ri state operator = state { acc = newAcc }
+  where newAcc = operator (valAcc state) (riValue ri state)
 
 executePrefixed :: PrefixedIns -> State -> State
 executePrefixed (Hash _ ) state = state {pc = 2, x1 = [1]}
