@@ -27,7 +27,7 @@ main = do
   return ()
 
 
-data R = Acc | Dat | X0 | X1
+data R = Acc | Dat | X0 | X1 -- register
 type I = Int -- integer
 data RI = R R | I I
 type L = String -- label
@@ -91,15 +91,46 @@ run program state@State { pc = i }
   | i == length program  = state
   | otherwise  = run program nextState
     where
-      nextState = execute (program ! i) state
+      nextState = execute (program ! i) (state { pc = i + 1 })
 
 executePrefixable :: PrefixableIns -> State -> State
-executePrefixable (Mov _ _) state = state { pc = 1, x1 = [0] }
+executePrefixable (Mov ri reg) state = store reg state2 (riValue ri state)
+  where state2 = maybeConsumeInput ri state
+executePrefixable (Add ri) state = storeAcc state2 (valAcc state + riValue ri state)
+  where state2 = maybeConsumeInput ri state
+executePrefixable (Sub ri) state = storeAcc state2 (valAcc state - riValue ri state)
+  where state2 = maybeConsumeInput ri state
+executePrefixable (Mul ri) state = storeAcc state2 (valAcc state * riValue ri state)
+  where state2 = maybeConsumeInput ri state
+executePrefixable Not state@State { acc = x }
+  | x == 0     = storeAcc state 100
+  | otherwise  = storeAcc state 0
 executePrefixable _ state = state
 
 executePrefixed :: PrefixedIns -> State -> State
 executePrefixed (Hash _ ) state = state {pc = 2, x1 = [1]}
 executePrefixed _ state = state
+
+riValue :: RI -> State -> I
+riValue (I value) _ = value
+riValue (R Acc) state = acc state
+riValue (R Dat) state = dat state
+riValue (R X0) state@State {x0 = x : _} = x
+riValue (R X0) state@State {x0 = [] } = error "reading after end of input"
+riValue (R X1) state = error "register x1 is for output only"
+
+maybeConsumeInput :: RI -> State -> State
+maybeConsumeInput (R X0) state@State { x0 = _:xs } = state { x0 = xs }
+maybeConsumeInput _ state = state
+
+store :: R -> State -> I -> State
+store Acc state value = state {acc = value}
+store Dat state value = state {dat = value}
+store X1 state@State {x1 = xs} value = state {x1 = xs ++ [value]}
+store X0 _ _ = error "register x0 is for input only"
+
+valAcc = riValue (R Acc)
+storeAcc = store Acc
 
 
 readProgram :: String -> Program
@@ -165,6 +196,7 @@ readR r = error $ "unknown register: '" ++ r ++ "'"
 read2RI :: String -> (RI, RI)
 read2RI operandsStr = (op1, op2)
   where [op1, op2] = map readRI . words $ operandsStr
+
 
 initialState :: Program -> [I] -> State
 initialState prog programInput = State
