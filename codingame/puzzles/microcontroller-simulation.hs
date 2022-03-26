@@ -2,11 +2,13 @@
 {-# LANGUAGE ViewPatterns #-}
 
 import System.IO
-import qualified Data.Map.Strict as Map
+import qualified Data.Map.Strict as Map (Map, (!), fromList)
 import Data.List (stripPrefix)
 import Data.Char (isDigit)
 import Data.Array
 import qualified Data.Text as T (pack, splitOn, unpack)
+import Data.Maybe (mapMaybe)
+
 
 main :: IO ()
 main = do
@@ -58,16 +60,21 @@ data PrefixedIns
 
 class Instruction_ a where
   execute :: a -> State -> State
+  getLabel :: a -> Maybe L
 instance Instruction_ PrefixableIns where
   execute = executePrefixable
+  getLabel _ = Nothing
 instance Instruction_ PrefixedIns where
   execute = executePrefixed
+  getLabel (Label l _) = Just l
+  getLabel _ = Nothing
 
 data Instruction = forall a . Instruction_ a => MkInstruction a
 pack :: Instruction_ a => a -> Instruction
 pack = MkInstruction
 instance Instruction_ Instruction where
   execute (MkInstruction a) = execute a
+  getLabel (MkInstruction a) = getLabel a
 
 type Program = Array Addr Instruction
 type Addr = Int -- instruction address
@@ -97,6 +104,9 @@ executePrefixable :: PrefixableIns -> State -> State
 executePrefixable (Mov ri reg) state = store reg operand state2
   where
     (operand, state2) = fetchOp1 ri state
+executePrefixable (Jmp label) state = state { pc = labelAddr }
+  where
+    labelAddr = (labelToAddr state) Map.! label
 executePrefixable (Add ri) state = executeArithmetic ri state (+)
 executePrefixable (Sub ri) state = executeArithmetic ri state (-)
 executePrefixable (Mul ri) state = executeArithmetic ri state (*)
@@ -130,6 +140,8 @@ executePrefixed :: PrefixedIns -> State -> State
 executePrefixed (Plus ins) state@State { plusDisabled = False } = execute ins state
 executePrefixed (Minus ins) state@State { minusDisabled = False } = execute ins state
 executePrefixed (Hash _) state = state
+executePrefixed (Label _ (Just ins)) state = execute ins state
+executePrefixed (Label _ Nothing) state = state
 executePrefixed _ state = state
 
 -- fetch operand and potentially consume it (if x0)
@@ -160,6 +172,25 @@ clamp = min 999 . max (-999)
 
 fetchAcc = fst . fetchOp1 (R Acc)
 storeAcc = store Acc
+
+
+initialState :: Program -> [I] -> State
+initialState program programInput = State
+  { pc = 0, acc = 0, dat = 0, x0 = programInput, x1 = []
+  , labelToAddr = labelsMap, alreadyExecuted = []
+  , plusDisabled = True, minusDisabled = True
+  }
+    where
+      labelsMap = computeLabelsMap program
+
+computeLabelsMap :: Program -> LabelsMap
+computeLabelsMap program = Map.fromList labelsAddrs
+  where
+    addrsInstrs = assocs program
+    addrsMaybeLabels = map (\(a, ins) -> (a, getLabel ins)) addrsInstrs
+    maybeLabelAddr a (Just l) = Just (l, a)
+    maybeLabelAddr _ Nothing = Nothing
+    labelsAddrs = mapMaybe (uncurry maybeLabelAddr) addrsMaybeLabels
 
 
 readProgram :: String -> Program
@@ -225,13 +256,3 @@ readR r = error $ "unknown register: '" ++ r ++ "'"
 read2RI :: String -> (RI, RI)
 read2RI operandsStr = (op1, op2)
   where [op1, op2] = map readRI . words $ operandsStr
-
-
-initialState :: Program -> [I] -> State
-initialState prog programInput = State
-  { pc = 0, acc = 0, dat = 0, x0 = programInput, x1 = []
-  , labelToAddr = Map.empty, alreadyExecuted = []
-  , plusDisabled = True, minusDisabled = True
-  }
-
--- computeLabelToAddr :: Program -> LabelsMap
