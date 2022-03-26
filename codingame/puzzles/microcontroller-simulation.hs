@@ -149,10 +149,14 @@ fetchOp2 ri1 ri2 state = (i1, i2, state3)
     (i2, state3) = fetchOp1 ri2 state2
 
 store :: R -> I -> State -> State
-store Acc value state = state {acc = value}
-store Dat value state = state {dat = value}
-store X1 value state@State {x1 = xs} = state {x1 = xs ++ [value]}
+store Acc value state = state {acc = clamp value}
+store Dat value state = state {dat = clamp value}
+store X1 value state@State {x1 = xs} = state {x1 = xs ++ [clamp value]}
 store X0 _ _ = error "register x0 is for input only"
+
+-- deals with integer overflow by clamping (saturation arithmetic)
+clamp :: I -> I
+clamp = min 999 . max (-999)
 
 fetchAcc = fst . fetchOp1 (R Acc)
 storeAcc = store Acc
