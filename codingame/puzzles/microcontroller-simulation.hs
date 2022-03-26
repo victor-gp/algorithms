@@ -38,18 +38,18 @@ data RI = R R | I I
 type L = String -- label
 
 data PrefixableIns
-  = -- basic
-    Mov RI R
+  -- basic
+  = Mov RI R
   | Jmp L
-  | -- arithmetic
-    Add RI
+  -- arithmetic
+  | Add RI
   | Sub RI
   | Mul RI
   | Not
   | Dgt RI
   | Dst RI RI
-  | -- branching / test
-    Teq RI RI
+  -- branching / test
+  | Teq RI RI
   | Tgt RI RI
   | Tlt RI RI
   | Tcp RI RI
