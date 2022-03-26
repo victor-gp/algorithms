@@ -94,15 +94,15 @@ run program state@State { pc = i }
       nextState = execute (program ! i) (state { pc = i + 1 })
 
 executePrefixable :: PrefixableIns -> State -> State
-executePrefixable (Mov ri reg) state = store reg state2 operand
+executePrefixable (Mov ri reg) state = store reg operand state2
   where
     (operand, state2) = fetchOp1 ri state
 executePrefixable (Add ri) state = executeArithmetic ri state (+)
 executePrefixable (Sub ri) state = executeArithmetic ri state (-)
 executePrefixable (Mul ri) state = executeArithmetic ri state (*)
 executePrefixable Not state@State { acc = x }
-  | x == 0     = storeAcc state 100
-  | otherwise  = storeAcc state 0
+  | x == 0     = storeAcc 100 state
+  | otherwise  = storeAcc 0 state
 executePrefixable (Teq ri1 ri2) state = executeTest ri1 ri2 state (==)
 executePrefixable (Tgt ri1 ri2) state = executeTest ri1 ri2 state (>)
 executePrefixable (Tlt ri1 ri2) state = executeTest ri1 ri2 state (<)
@@ -115,16 +115,16 @@ executePrefixable (Tcp ri1 ri2) state
 executePrefixable _ state = state
 
 executeArithmetic :: RI -> State -> (Int -> Int -> Int) -> State
-executeArithmetic ri state operator = storeAcc state2 newAcc
+executeArithmetic ri state operator = storeAcc result state2
   where
     (operand, state2) = fetchOp1 ri state
-    newAcc = operator (fetchAcc state) operand
+    result = operator (fetchAcc state) operand
 
 executeTest :: RI -> RI -> State -> (Int -> Int -> Bool) -> State
-executeTest ri1 ri2 state cmp = state2 { plusDisabled = not res, minusDisabled = res }
+executeTest ri1 ri2 state cmp = state2 { plusDisabled = not test, minusDisabled = test }
   where
     (a, b, state2) = fetchOp2 ri1 ri2 state
-    res = cmp a b
+    test = cmp a b
 
 executePrefixed :: PrefixedIns -> State -> State
 executePrefixed (Plus ins) state@State { plusDisabled = False } = execute ins state
@@ -148,10 +148,10 @@ fetchOp2 ri1 ri2 state = (i1, i2, state3)
     (i1, state2) = fetchOp1 ri1 state
     (i2, state3) = fetchOp1 ri2 state2
 
-store :: R -> State -> I -> State
-store Acc state value = state {acc = value}
-store Dat state value = state {dat = value}
-store X1 state@State {x1 = xs} value = state {x1 = xs ++ [value]}
+store :: R -> I -> State -> State
+store Acc value state = state {acc = value}
+store Dat value state = state {dat = value}
+store X1 value state@State {x1 = xs} = state {x1 = xs ++ [value]}
 store X0 _ _ = error "register x0 is for input only"
 
 fetchAcc = fst . fetchOp1 (R Acc)
