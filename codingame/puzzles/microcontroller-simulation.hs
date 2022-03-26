@@ -136,7 +136,7 @@ executeAt ins state@State { alreadyExecutedAts = aeSet }
   | otherwise = execute ins state2
   where
     insAddr = pc state - 1
-    state2 = state {alreadyExecutedAts = insert insAddr aeSet}
+    state2 = state { alreadyExecutedAts = insert insAddr aeSet }
 
 executeArithmetic :: RI -> State -> (Int -> Int -> Int) -> State
 executeArithmetic ri state operator = storeAcc result state2
@@ -152,7 +152,7 @@ executeTest ri1 ri2 state cmp = state2 { plusDisabled = not test, minusDisabled 
 
 executeTcp :: RI -> RI -> State -> State
 executeTcp ri1 ri2 state
-  | a > b = state2 {plusDisabled = False, minusDisabled = True}
+  | a > b = state2 { plusDisabled = False, minusDisabled = True }
   | a == b  = state2 { plusDisabled = True, minusDisabled = True }
   | a < b   = state2 { plusDisabled = True, minusDisabled = False }
   | otherwise  = state -- this is redundant (?) but HLint complains...
@@ -192,8 +192,8 @@ fetchOp1 :: RI -> State -> (I, State)
 fetchOp1 (I value) state = (value, state)
 fetchOp1 (R Acc) state = (acc state, state)
 fetchOp1 (R Dat) state = (dat state, state)
-fetchOp1 (R X0) state@State {x0 = x:xs} = (x, state { x0 = xs })
-fetchOp1 (R X0) state@State {x0 = []} = error "reading after end of input"
+fetchOp1 (R X0) state@State { x0 = x:xs } = (x, state { x0 = xs })
+fetchOp1 (R X0) state@State { x0 = [] } = error "reading after end of input"
 fetchOp1 (R X1) _ = error "register x1 is for output only"
 
 -- fetch operands and potentially consume them (if x0)
@@ -204,9 +204,9 @@ fetchOp2 ri1 ri2 state = (i1, i2, state3)
     (i2, state3) = fetchOp1 ri2 state2
 
 store :: R -> I -> State -> State
-store Acc value state = state {acc = clamp value}
-store Dat value state = state {dat = clamp value}
-store X1 value state@State {x1 = xs} = state {x1 = xs ++ [clamp value]}
+store Acc value state = state { acc = clamp value }
+store Dat value state = state { dat = clamp value }
+store X1 value state@State { x1 = xs } = state { x1 = xs ++ [clamp value] }
 store X0 _ _ = error "register x0 is for input only"
 
 -- deals with integer overflow by clamping (saturation arithmetic)
