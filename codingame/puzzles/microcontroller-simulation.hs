@@ -94,8 +94,9 @@ run program state@State { pc = i }
       nextState = execute (program ! i) (state { pc = i + 1 })
 
 executePrefixable :: PrefixableIns -> State -> State
-executePrefixable (Mov ri reg) state = store reg state2 (riValue ri state)
-  where state2 = maybeConsumeInput ri state
+executePrefixable (Mov ri reg) state = store reg state2 operand
+  where
+    (operand, state2) = fetchOp1 ri state
 executePrefixable (Add ri) state = executeArithmetic ri state (+)
 executePrefixable (Sub ri) state = executeArithmetic ri state (-)
 executePrefixable (Mul ri) state = executeArithmetic ri state (*)
@@ -106,29 +107,23 @@ executePrefixable (Teq ri1 ri2) state = executeTest ri1 ri2 state (==)
 executePrefixable (Tgt ri1 ri2) state = executeTest ri1 ri2 state (>)
 executePrefixable (Tlt ri1 ri2) state = executeTest ri1 ri2 state (<)
 executePrefixable (Tcp ri1 ri2) state
-  | a > b   = state3 { plusDisabled = False, minusDisabled = True }
-  | a == b  = state3 { plusDisabled = True, minusDisabled = True }
-  | a < b   = state3 { plusDisabled = True, minusDisabled = False }
-  where
-    a = riValue ri1 state
-    state2 = maybeConsumeInput ri1 state
-    b = riValue ri2 state
-    state3 = maybeConsumeInput ri2 state2
+  | a > b   = state2 { plusDisabled = False, minusDisabled = True }
+  | a == b  = state2 { plusDisabled = True, minusDisabled = True }
+  | a < b   = state2 { plusDisabled = True, minusDisabled = False }
+    where
+      (a, b, state2) = fetchOp2 ri1 ri2 state
 executePrefixable _ state = state
 
 executeArithmetic :: RI -> State -> (Int -> Int -> Int) -> State
-executeArithmetic (R X0) state@State{ x0 = x:xs } operator = state { acc = newAcc, x0 = xs }
-  where newAcc = operator (valAcc state) x
-executeArithmetic ri state operator = state { acc = newAcc }
-  where newAcc = operator (valAcc state) (riValue ri state)
+executeArithmetic ri state operator = storeAcc state2 newAcc
+  where
+    (operand, state2) = fetchOp1 ri state
+    newAcc = operator (fetchAcc state) operand
 
 executeTest :: RI -> RI -> State -> (Int -> Int -> Bool) -> State
-executeTest ri1 ri2 state cmp = state3 { plusDisabled = not res, minusDisabled = res }
+executeTest ri1 ri2 state cmp = state2 { plusDisabled = not res, minusDisabled = res }
   where
-    a = riValue ri1 state
-    state2 = maybeConsumeInput ri1 state
-    b = riValue ri2 state
-    state3 = maybeConsumeInput ri2 state2
+    (a, b, state2) = fetchOp2 ri1 ri2 state
     res = cmp a b
 
 executePrefixed :: PrefixedIns -> State -> State
@@ -137,17 +132,21 @@ executePrefixed (Minus ins) state@State { minusDisabled = False } = execute ins 
 executePrefixed (Hash _) state = state
 executePrefixed _ state = state
 
-riValue :: RI -> State -> I
-riValue (I value) _ = value
-riValue (R Acc) state = acc state
-riValue (R Dat) state = dat state
-riValue (R X0) state@State {x0 = x : _} = x
-riValue (R X0) state@State {x0 = [] } = error "reading after end of input"
-riValue (R X1) state = error "register x1 is for output only"
+-- fetch operand and potentially consume it (if x0)
+fetchOp1 :: RI -> State -> (I, State)
+fetchOp1 (I value) state = (value, state)
+fetchOp1 (R Acc) state = (acc state, state)
+fetchOp1 (R Dat) state = (dat state, state)
+fetchOp1 (R X0) state@State {x0 = x:xs} = (x, state { x0 = xs })
+fetchOp1 (R X0) state@State {x0 = []} = error "reading after end of input"
+fetchOp1 (R X1) _ = error "register x1 is for output only"
 
-maybeConsumeInput :: RI -> State -> State
-maybeConsumeInput (R X0) state@State { x0 = _:xs } = state { x0 = xs }
-maybeConsumeInput _ state = state
+-- fetch operands and potentially consume them (if x0)
+fetchOp2 :: RI -> RI -> State -> (I, I, State)
+fetchOp2 ri1 ri2 state = (i1, i2, state3)
+  where
+    (i1, state2) = fetchOp1 ri1 state
+    (i2, state3) = fetchOp1 ri2 state2
 
 store :: R -> State -> I -> State
 store Acc state value = state {acc = value}
@@ -155,7 +154,7 @@ store Dat state value = state {dat = value}
 store X1 state@State {x1 = xs} value = state {x1 = xs ++ [value]}
 store X0 _ _ = error "register x0 is for input only"
 
-valAcc = riValue (R Acc)
+fetchAcc = fst . fetchOp1 (R Acc)
 storeAcc = store Acc
 
 
