@@ -113,9 +113,8 @@ executePrefixable (Jmp label) state = state { pc = labelAddr }
 executePrefixable (Add ri) state = executeArithmetic ri state (+)
 executePrefixable (Sub ri) state = executeArithmetic ri state (-)
 executePrefixable (Mul ri) state = executeArithmetic ri state (*)
-executePrefixable Not state@State { acc = x }
-  | x == 0     = storeAcc 100 state
-  | otherwise  = storeAcc 0 state
+executePrefixable Not state@State { acc = 0 } = storeAcc 100 state
+executePrefixable Not state = storeAcc 0 state
 executePrefixable (Dgt ri) state = executeDgt ri state
 executePrefixable (Dst ri1 ri2) state = executeDst ri1 ri2 state
 executePrefixable (Teq ri1 ri2) state = executeTest ri1 ri2 state (==)
@@ -147,10 +146,11 @@ executeArithmetic ri state operator = storeAcc result state2
     result = operator (fetchAcc state) operand
 
 executeTest :: RI -> RI -> State -> (Int -> Int -> Bool) -> State
-executeTest ri1 ri2 state cmp = state2 { plusDisabled = not test, minusDisabled = test }
+executeTest ri1 ri2 state cmp = state3
   where
     (a, b, state2) = fetchOp2 ri1 ri2 state
     test = cmp a b
+    state3 =  state2 { plusDisabled = not test, minusDisabled = test }
 
 executeTcp :: RI -> RI -> State -> State
 executeTcp ri1 ri2 state
@@ -223,10 +223,8 @@ initialState :: Program -> [I] -> State
 initialState program programInput = State
   { pc = 0, acc = 0, dat = 0, x0 = programInput, x1 = []
   , plusDisabled = True, minusDisabled = True
-  , alreadyExecutedAts = empty, labelToAddr = labelsMap
+  , alreadyExecutedAts = empty, labelToAddr = computeLabelsMap program
   }
-    where
-      labelsMap = computeLabelsMap program
 
 computeLabelsMap :: Program -> LabelsMap
 computeLabelsMap program = Map.fromList labelsAddrs
