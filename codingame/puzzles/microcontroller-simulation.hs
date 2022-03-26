@@ -119,13 +119,24 @@ executePrefixable (Dst ri1 ri2) state = executeDst ri1 ri2 state
 executePrefixable (Teq ri1 ri2) state = executeTest ri1 ri2 state (==)
 executePrefixable (Tgt ri1 ri2) state = executeTest ri1 ri2 state (>)
 executePrefixable (Tlt ri1 ri2) state = executeTest ri1 ri2 state (<)
-executePrefixable (Tcp ri1 ri2) state
-  | a > b   = state2 { plusDisabled = False, minusDisabled = True }
-  | a == b  = state2 { plusDisabled = True, minusDisabled = True }
-  | a < b   = state2 { plusDisabled = True, minusDisabled = False }
-    where
-      (a, b, state2) = fetchOp2 ri1 ri2 state
-executePrefixable _ state = state
+executePrefixable (Tcp ri1 ri2) state = executeTcp ri1 ri2 state
+
+executePrefixed :: PrefixedIns -> State -> State
+executePrefixed (Plus ins) state@State { plusDisabled = False } = execute ins state
+executePrefixed (Minus ins) state@State { minusDisabled = False } = execute ins state
+executePrefixed (Hash _) state = state
+executePrefixed (At ins) state = executeAt ins state
+executePrefixed (Label _ (Just ins)) state = execute ins state
+executePrefixed (Label _ Nothing) state = state
+executePrefixed _ state = state
+
+executeAt :: PrefixableIns -> State -> State
+executeAt ins state@State { alreadyExecutedAts = aeSet }
+  | member insAddr aeSet = state
+  | otherwise = execute ins state2
+  where
+    insAddr = pc state - 1
+    state2 = state {alreadyExecutedAts = insert insAddr aeSet}
 
 executeArithmetic :: RI -> State -> (Int -> Int -> Int) -> State
 executeArithmetic ri state operator = storeAcc result state2
@@ -138,6 +149,15 @@ executeTest ri1 ri2 state cmp = state2 { plusDisabled = not test, minusDisabled 
   where
     (a, b, state2) = fetchOp2 ri1 ri2 state
     test = cmp a b
+
+executeTcp :: RI -> RI -> State -> State
+executeTcp ri1 ri2 state
+  | a > b = state2 {plusDisabled = False, minusDisabled = True}
+  | a == b  = state2 { plusDisabled = True, minusDisabled = True }
+  | a < b   = state2 { plusDisabled = True, minusDisabled = False }
+  | otherwise  = state -- this is redundant (?) but HLint complains...
+    where
+      (a, b, state2) = fetchOp2 ri1 ri2 state
 
 executeDgt :: RI -> State -> State
 executeDgt ri state = storeAcc result state2
@@ -166,20 +186,6 @@ replaceDigit digit value accVal = result
 digitMask :: I -> I
 digitMask 0 = 1
 digitMask digit = 10 * digitMask (digit - 1)
-
-executePrefixed :: PrefixedIns -> State -> State
-executePrefixed (Plus ins) state@State { plusDisabled = False } = execute ins state
-executePrefixed (Minus ins) state@State { minusDisabled = False } = execute ins state
-executePrefixed (Hash _) state = state
-executePrefixed (At ins) state@State { alreadyExecutedAts = aeSet}
-  | member insAddr aeSet  = state
-  | otherwise  = execute ins state2
-    where
-      insAddr = pc state - 1
-      state2 = state { alreadyExecutedAts = insert insAddr aeSet }
-executePrefixed (Label _ (Just ins)) state = execute ins state
-executePrefixed (Label _ Nothing) state = state
-executePrefixed _ state = state
 
 -- fetch operand and potentially consume it (if x0)
 fetchOp1 :: RI -> State -> (I, State)
