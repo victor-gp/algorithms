@@ -59,6 +59,7 @@ data PrefixedIns
   | At PrefixableIns
   | Label L (Maybe PrefixableIns)
 
+-- typeclass for instructions
 class Instruction_ a where
   execute :: a -> State -> State
   getLabel :: a -> Maybe L
@@ -70,6 +71,7 @@ instance Instruction_ PrefixedIns where
   getLabel (Label l _) = Just l
   getLabel _ = Nothing
 
+-- polymorphic instruction type
 data Instruction = forall a . Instruction_ a => MkInstruction a
 pack :: Instruction_ a => a -> Instruction
 pack = MkInstruction
@@ -86,10 +88,10 @@ data State = State
   , dat :: I
   , x0 :: [I] -- input
   , x1 :: [I] -- output
-  , labelToAddr :: LabelsMap
-  , alreadyExecutedAts :: Set Addr
   , plusDisabled :: Bool
   , minusDisabled :: Bool
+  , alreadyExecutedAts :: Set Addr
+  , labelToAddr :: LabelsMap
   }
 type LabelsMap = Map.Map L Addr
 
@@ -220,8 +222,8 @@ storeAcc = store Acc
 initialState :: Program -> [I] -> State
 initialState program programInput = State
   { pc = 0, acc = 0, dat = 0, x0 = programInput, x1 = []
-  , labelToAddr = labelsMap, alreadyExecutedAts = empty
   , plusDisabled = True, minusDisabled = True
+  , alreadyExecutedAts = empty, labelToAddr = labelsMap
   }
     where
       labelsMap = computeLabelsMap program
