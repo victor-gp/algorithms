@@ -114,6 +114,8 @@ executePrefixable (Mul ri) state = executeArithmetic ri state (*)
 executePrefixable Not state@State { acc = x }
   | x == 0     = storeAcc 100 state
   | otherwise  = storeAcc 0 state
+executePrefixable (Dgt ri) state = executeDgt ri state
+executePrefixable (Dst ri1 ri2) state = executeDst ri1 ri2 state
 executePrefixable (Teq ri1 ri2) state = executeTest ri1 ri2 state (==)
 executePrefixable (Tgt ri1 ri2) state = executeTest ri1 ri2 state (>)
 executePrefixable (Tlt ri1 ri2) state = executeTest ri1 ri2 state (<)
@@ -136,6 +138,34 @@ executeTest ri1 ri2 state cmp = state2 { plusDisabled = not test, minusDisabled 
   where
     (a, b, state2) = fetchOp2 ri1 ri2 state
     test = cmp a b
+
+executeDgt :: RI -> State -> State
+executeDgt ri state = storeAcc result state2
+  where
+    value = fetchAcc state
+    (digit, state2) = fetchOp1 ri state
+    result = value `div` digitMask digit `mod` 10
+
+executeDst :: RI -> RI -> State -> State
+executeDst ri1 ri2 state = storeAcc result state2
+  where
+    accVal = fetchAcc state
+    (digit, value, state2) = fetchOp2 ri1 ri2 state
+    result = replaceDigit digit value accVal
+
+-- pre: digit is in [0, 2], value in [0, 9]
+replaceDigit :: I -> I -> I -> I
+replaceDigit digit value accVal = result
+  where
+    mask = digitMask digit
+    replaced = (accVal `div` mask `mod` 10) * mask
+    replacement = value * mask
+    result = accVal - replaced + replacement
+
+-- pre: digit is in [0, 2]
+digitMask :: I -> I
+digitMask 0 = 1
+digitMask digit = 10 * digitMask (digit - 1)
 
 executePrefixed :: PrefixedIns -> State -> State
 executePrefixed (Plus ins) state@State { plusDisabled = False } = execute ins state
