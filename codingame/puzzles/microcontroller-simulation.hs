@@ -1,11 +1,11 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ViewPatterns #-}
 
-import System.IO
+import System.IO ( hSetBuffering, stdout, BufferMode(NoBuffering) )
 import qualified Data.Map.Strict as Map (Map, (!), fromList)
 import Data.List (stripPrefix)
 import Data.Char (isDigit)
-import Data.Array
+import Data.Array ( Array, (!), assocs, listArray )
 import qualified Data.Text as T (pack, splitOn, unpack)
 import Data.Maybe (mapMaybe)
 import Data.Set (Set, empty, insert, member)
