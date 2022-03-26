@@ -8,6 +8,7 @@ import Data.Char (isDigit)
 import Data.Array
 import qualified Data.Text as T (pack, splitOn, unpack)
 import Data.Maybe (mapMaybe)
+import Data.Set (Set, empty, insert, member)
 
 
 main :: IO ()
@@ -86,7 +87,7 @@ data State = State
   , x0 :: [I] -- input
   , x1 :: [I] -- output
   , labelToAddr :: LabelsMap
-  , alreadyExecuted :: [Bool]
+  , alreadyExecutedAts :: Set Addr
   , plusDisabled :: Bool
   , minusDisabled :: Bool
   }
@@ -140,6 +141,12 @@ executePrefixed :: PrefixedIns -> State -> State
 executePrefixed (Plus ins) state@State { plusDisabled = False } = execute ins state
 executePrefixed (Minus ins) state@State { minusDisabled = False } = execute ins state
 executePrefixed (Hash _) state = state
+executePrefixed (At ins) state@State { alreadyExecutedAts = aeSet}
+  | member insAddr aeSet  = state
+  | otherwise  = execute ins state2
+    where
+      insAddr = pc state - 1
+      state2 = state { alreadyExecutedAts = insert insAddr aeSet }
 executePrefixed (Label _ (Just ins)) state = execute ins state
 executePrefixed (Label _ Nothing) state = state
 executePrefixed _ state = state
@@ -177,7 +184,7 @@ storeAcc = store Acc
 initialState :: Program -> [I] -> State
 initialState program programInput = State
   { pc = 0, acc = 0, dat = 0, x0 = programInput, x1 = []
-  , labelToAddr = labelsMap, alreadyExecuted = []
+  , labelToAddr = labelsMap, alreadyExecutedAts = empty
   , plusDisabled = True, minusDisabled = True
   }
     where
