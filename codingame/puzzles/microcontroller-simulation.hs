@@ -139,13 +139,13 @@ executeAt ins state@State { alreadyExecutedAts = aeSet }
     insAddr = pc state - 1
     state2 = state { alreadyExecutedAts = insert insAddr aeSet }
 
-executeArithmetic :: RI -> State -> (Int -> Int -> Int) -> State
+executeArithmetic :: RI -> State -> (I -> I -> I) -> State
 executeArithmetic ri state operator = storeAcc result state2
   where
     (operand, state2) = fetchOp1 ri state
     result = operator (fetchAcc state) operand
 
-executeTest :: RI -> RI -> State -> (Int -> Int -> Bool) -> State
+executeTest :: RI -> RI -> State -> (I -> I -> Bool) -> State
 executeTest ri1 ri2 state cmp = state3
   where
     (a, b, state2) = fetchOp2 ri1 ri2 state
