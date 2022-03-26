@@ -1,3 +1,5 @@
+-- https://www.codingame.com/training/medium/mcxxxx-microcontroller-simulation
+
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ViewPatterns #-}
 
